@@ -1,151 +1,123 @@
 import argparse
-import tempfile
+
 from pathlib import Path
-from queue import Queue
-from services.crop_service import CropService
-from services.image_extraction_service import ImageExtractionService
-from services.preprocessing_service import PreprocessingService
-from services.ocr_service import OCRService, OcrResult
-from services.subtitle_service import SubtitleService, SubtitleEntry
-import threading
+from queue import Empty, Queue, ShutDown
+from models.OcrServiceOutput import OcrServiceOutput
+from models.SubtitleServiceOutput import SubtitleServiceOutput
+from models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
+from services.ImageExtractionService import ImageExtractionService
+from services.OcrService import OCRService
+from services.SubtitleService import SubtitleService
 
 
-def format_time(seconds: float) -> str:
-    ms = int((seconds - int(seconds)) * 1000)
-    s = int(seconds) % 60
-    m = (int(seconds) // 60) % 60
-    h = int(seconds) // 3600
-    return f"{h:02}:{m:02}:{s:02},{ms:03}"
+class Arguments(argparse.Namespace):
+    # Required parameters
+    input: Path
+    output: Path
+    # Optional parameters
+    crop_height: int
+    y_pos: int
+    fps: float
+    lang: str
 
 
-def write_srt(subs: list[SubtitleEntry], output_srt: Path) -> None:
-    with output_srt.open("w", encoding="utf-8") as f:
-        for idx, entry in enumerate(subs, 1):
-            f.write(f"{idx}\n")
-            f.write(f"{format_time(entry.start)} --> {format_time(entry.end)}\n")
-            f.write(entry.text + "\n\n")
+def seconds_to_srt_time(seconds: float) -> str:
+    """
+    Convert seconds to SRT time format
+
+    The timecode format used is hours:minutes:seconds,milliseconds
+    with time units fixed to two zero-padded digits
+    and fractions fixed to three zero-padded digits (00:00:00,000).
+    The comma (,) is used for fractional separator.
+    """
+
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = int(seconds % 60)
+    milliseconds = int((seconds - int(seconds)) * 1000)
+    return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Extract hardsubs from a video into an SRT file."
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--crop-height", type=int, default=100)
+    parser.add_argument("--y-pos", type=int, default=380)
+    parser.add_argument("--fps", type=float, default=6.0)
+    parser.add_argument("--lang", type=str, default="fra")
+    arguments = parser.parse_args(namespace=Arguments())
+
+    # Create queues for inter-service communication
+    image_extraction_input_queue = Queue[Path]()
+    ocr_input_queue = Queue[ImageExtractionServiceOutput]()
+    subtitle_input_queue = Queue[OcrServiceOutput]()
+    subtitle_output_queue = Queue[SubtitleServiceOutput]()
+
+    # Create the output srt buffer
+    # This will be used to collect the final subtitles to be written to the output file.
+    output_srt_buffer = dict[Path, list[SubtitleServiceOutput]]()
+
+    # Create the services
+    image_extraction_service = ImageExtractionService(
+        input_queue=image_extraction_input_queue,
+        output_queue=ocr_input_queue,
+        output_dir=arguments.output,
+        fps=arguments.fps,
+        crop_height=arguments.crop_height,
+        y_position=arguments.y_pos,
     )
-    parser.add_argument("input", type=Path, help="Input video file")
-    parser.add_argument("output", type=Path, help="Output SRT file")
-    parser.add_argument(
-        "--crop-height",
-        type=int,
-        default=100,
-        help="Height in pixels of subtitle region to crop",
+    ocr_service = OCRService(
+        input_queue=ocr_input_queue,
+        output_queue=subtitle_input_queue,
+        lang=arguments.lang,
     )
-    parser.add_argument(
-        "--y-pos",
-        type=int,
-        default=380,
-        help="Y offset for cropping the subtitle region",
+    subtitle_service = SubtitleService(
+        input_queue=subtitle_input_queue,
+        output_queue=subtitle_output_queue,
     )
-    parser.add_argument(
-        "--fps",
-        type=float,
-        default=6.0,
-        help="Frame extraction rate (frames per second)",
-    )
-    parser.add_argument(
-        "--lang", type=str, default="fra", help="Tesseract language code"
-    )
-    args = parser.parse_args()
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir = Path(tmpdir)
-        cropped = tmpdir / "cropped.mp4"
-        frames = tmpdir / "frames"
+    # Input the video file into the image extraction service
+    image_extraction_input_queue.put(arguments.input)
 
-        # Queues for each service
-        crop_in: Queue = Queue()
-        crop_out: Queue = Queue()
-        extract_in: Queue = Queue()
-        extract_out: Queue = Queue()
-        preprocess_in: Queue = Queue()
-        preprocess_out: Queue = Queue()
-        ocr_in: Queue = Queue()
-        ocr_out: Queue = Queue()
-        sub_in: Queue = Queue()
-        sub_out: Queue = Queue()
+    # TODO start the services
+    # For now, we will run them sequentially
+    # Later, we can use threading or multiprocessing to run them in parallel
 
-        # Instantiate service classes
-        crop_service = CropService(crop_in, crop_out, args.crop_height, args.y_pos)
-        extract_service = ImageExtractionService(extract_in, extract_out, args.fps)
-        preprocess_service = PreprocessingService(preprocess_in, preprocess_out)
-        ocr_service = OCRService(ocr_in, ocr_out, args.lang)
-        subtitle_service = SubtitleService(sub_in, sub_out)
+    # Wait for the services to finish processing
+    QUEUE_GET_TIMEOUT = 1 / 1000  # seconds
+    while True:
+        try:
+            item = subtitle_output_queue.get(timeout=QUEUE_GET_TIMEOUT)
+        except Empty:
+            pass
+        except ShutDown:
+            print("Subtitle processing is done")
+            break
+        else:
+            if item.source_video not in output_srt_buffer:
+                output_srt_buffer[item.source_video] = []
+            output_srt_buffer[item.source_video].append(item)
 
-        # Start service threads
-        crop_thread = threading.Thread(target=crop_service.run)
-        extract_thread = threading.Thread(target=extract_service.run)
-        preprocess_thread = threading.Thread(target=preprocess_service.run)
-        ocr_thread = threading.Thread(target=ocr_service.run)
-        sub_thread = threading.Thread(target=subtitle_service.run)
-        for t in [
-            crop_thread,
-            extract_thread,
-            preprocess_thread,
-            ocr_thread,
-            sub_thread,
-        ]:
-            t.start()
+    # After all services are finished, we can write the sorted subtitles to the output file
+    for video_path, subtitles in output_srt_buffer.items():
 
-        # Pipeline: crop -> extract -> preprocess -> ocr -> subtitle
-        crop_in.put((args.input, cropped))
-        crop_in.put(None)
-        count = {"crop": 0, "extract": 0, "preprocess": 0, "ocr": 0}
+        # Sort the subtitles by start time
+        subtitles.sort(key=lambda x: x.start)
 
-        # Crop
-        while True:
-            out = crop_out.get()
-            if out is None:
-                extract_in.put(None)
-                break
-            extract_in.put((cropped, frames))
-            count["crop"] += 1
-            print(f"Crop done: {count['crop']}")
-
-        # Extract
-        while True:
-            out = extract_out.get()
-            if out is None:
-                preprocess_in.put(None)
-                break
-            for frame in frames.iterdir():
-                if frame.name.endswith(".jpg"):
-                    preprocess_in.put(str(frame))
-                    count["extract"] += 1
-                    print(f"Frames extracted: {count['extract']}")
-
-        # Preprocess
-        while True:
-            out = preprocess_out.get()
-            if out is None:
-                ocr_in.put(None)
-                break
-            ocr_in.put(out)
-            count["preprocess"] += 1
-            print(f"Preprocessed: {count['preprocess']}")
-
-        # OCR
-        while True:
-            out = ocr_out.get()
-            if out is None:
-                sub_in.put(None)
-                break
-            sub_in.put(out)
-            count["ocr"] += 1
-            print(f"OCR done: {count['ocr']}")
-
-        # Subtitle consolidation
-        subs = sub_out.get()
-        print(f"Writing SRT to {args.output}...")
-        write_srt(subs, args.output)
-    print("Done.")
+        # Write the subtitles to the output file
+        output_file = arguments.output / f"{video_path.stem}.srt"
+        with open(output_file, "w", encoding="utf-8") as f:
+            for i, subtitle in enumerate(subtitles):
+                # Convert start and end times to SRT format
+                start = seconds_to_srt_time(subtitle.start)
+                end = seconds_to_srt_time(subtitle.end)
+                # Write the subtitle in SRT format
+                f.write(f"{i + 1}\n")
+                f.write(f"{start} --> {end}\n")
+                f.write(f"{subtitle.text}\n\n")
 
 
 if __name__ == "__main__":
