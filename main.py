@@ -95,6 +95,7 @@ def main():
     # Note: We run the OCR service with a pool size of 4 to allow parallel processing
     runners: list[ServiceRunner] = [
         ProcessServiceRunner(service=image_extraction_service),
+        # HACK - this is a workaround, building the processes in a runner doesn't work
         *[
             # Pool of OCR services
             ProcessServiceRunner(service=ocr_service)
