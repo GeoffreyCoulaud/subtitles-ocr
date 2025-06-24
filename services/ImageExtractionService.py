@@ -3,7 +3,7 @@ import math
 from pathlib import Path
 
 from models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
-from services.service import Service
+from services.Service import Service
 
 
 class ImageExtractionService(Service[Path, ImageExtractionServiceOutput]):

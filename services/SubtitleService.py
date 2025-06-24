@@ -4,7 +4,7 @@ from pathlib import Path
 
 from models.OcrServiceOutput import OcrServiceOutput
 from models.SubtitleServiceOutput import SubtitleServiceOutput
-from services.service import Service
+from services.Service import Service
 
 
 @dataclass
@@ -83,8 +83,8 @@ class SubtitleService(Service[OcrServiceOutput, SubtitleServiceOutput]):
                 end=future_boundary.timestamp,
                 text=item.text,
                 source_video=item.source_video,
-                frame_count=frame_count,
-                total=item.total,
+                frame_size=frame_count,
+                frame_total=item.total,
             )
         ]
 

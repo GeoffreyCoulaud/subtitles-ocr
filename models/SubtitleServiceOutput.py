@@ -10,6 +10,6 @@ class SubtitleServiceOutput:
     end: float
     text: str
 
-    frame_count: int  # Number of frames in the subtitle
-    total: int  # Total number of frames in the video
+    frame_size: int  # Number of frames in the subtitle
+    frame_total: int  # Total number of frames in the video
     source_video: Path  # Path to the source video file

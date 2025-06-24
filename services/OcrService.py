@@ -2,10 +2,10 @@ import pytesseract
 
 from models.OcrServiceOutput import OcrServiceOutput
 from models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
-from services.service import Service
+from services.Service import Service
 
 
-class OCRService(Service[ImageExtractionServiceOutput, OcrServiceOutput]):
+class OcrService(Service[ImageExtractionServiceOutput, OcrServiceOutput]):
     """Service that performs OCR on images and extracts text"""
 
     __lang: str

@@ -1,12 +1,16 @@
 import argparse
 
+from mimetypes import guess_file_type
+from multiprocessing import JoinableQueue
 from pathlib import Path
-from queue import Empty, Queue, ShutDown
+from queue import Empty
+from writers.SubripWriter import SubripWriter
 from models.OcrServiceOutput import OcrServiceOutput
 from models.SubtitleServiceOutput import SubtitleServiceOutput
 from models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
 from services.ImageExtractionService import ImageExtractionService
-from services.OcrService import OCRService
+from services.OcrService import OcrService
+from services.ServiceRunner import ServiceRunner
 from services.SubtitleService import SubtitleService
 
 
@@ -21,23 +25,6 @@ class Arguments(argparse.Namespace):
     lang: str
 
 
-def seconds_to_srt_time(seconds: float) -> str:
-    """
-    Convert seconds to SRT time format
-
-    The timecode format used is hours:minutes:seconds,milliseconds
-    with time units fixed to two zero-padded digits
-    and fractions fixed to three zero-padded digits (00:00:00,000).
-    The comma (,) is used for fractional separator.
-    """
-
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    seconds = int(seconds % 60)
-    milliseconds = int((seconds - int(seconds)) * 1000)
-    return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
-
-
 def main():
 
     # Parse command line arguments
@@ -50,74 +37,126 @@ def main():
     parser.add_argument("--lang", type=str, default="fra")
     arguments = parser.parse_args(namespace=Arguments())
 
-    # Create queues for inter-service communication
-    image_extraction_input_queue = Queue[Path]()
-    ocr_input_queue = Queue[ImageExtractionServiceOutput]()
-    subtitle_input_queue = Queue[OcrServiceOutput]()
-    subtitle_output_queue = Queue[SubtitleServiceOutput]()
+    # Detect the videos at the input path
+    raw_input_paths = []
+    if arguments.input.is_file():
+        raw_input_paths.append(arguments.input)
+    elif arguments.input.is_dir():
+        for dirent in arguments.input.iterdir():
+            raw_input_paths.append(dirent)
+    input_video_file_paths = []
+    for dirent in raw_input_paths:
+        if not dirent.is_file():
+            continue
+        (mime, _encoding) = guess_file_type(dirent)
+        if mime is None or not mime.startswith("video/"):
+            continue
+        input_video_file_paths.append(dirent)
 
-    # Create the output srt buffer
-    # This will be used to collect the final subtitles to be written to the output file.
-    output_srt_buffer = dict[Path, list[SubtitleServiceOutput]]()
+    # Check the output path
+    if not arguments.output.exists():
+        arguments.output.mkdir(parents=True, exist_ok=True)
+    if not arguments.output.is_dir():
+        raise ValueError(f"Output path {arguments.output} is not a directory")
+
+    # Create queues for inter-service communication
+    videos_queue = JoinableQueue[Path]()
+    frames_queue = JoinableQueue[ImageExtractionServiceOutput]()
+    timed_text_queue = JoinableQueue[OcrServiceOutput]()
+    subtitles_queue = JoinableQueue[SubtitleServiceOutput]()
 
     # Create the services
     image_extraction_service = ImageExtractionService(
-        input_queue=image_extraction_input_queue,
-        output_queue=ocr_input_queue,
+        input_queue=videos_queue,
+        output_queue=frames_queue,
         output_dir=arguments.output,
         fps=arguments.fps,
         crop_height=arguments.crop_height,
         y_position=arguments.y_pos,
     )
-    ocr_service = OCRService(
-        input_queue=ocr_input_queue,
-        output_queue=subtitle_input_queue,
+    ocr_service = OcrService(
+        input_queue=frames_queue,
+        output_queue=timed_text_queue,
         lang=arguments.lang,
     )
     subtitle_service = SubtitleService(
-        input_queue=subtitle_input_queue,
-        output_queue=subtitle_output_queue,
+        input_queue=timed_text_queue,
+        output_queue=subtitles_queue,
     )
 
-    # Input the video file into the image extraction service
-    image_extraction_input_queue.put(arguments.input)
+    # Create the service runners
+    service_runners: list[ServiceRunner] = [
+        ServiceRunner(service=image_extraction_service),
+        ServiceRunner(service=ocr_service),
+        ServiceRunner(service=subtitle_service),
+    ]
 
-    # TODO start the services
-    # For now, we will run them sequentially
-    # Later, we can use threading or multiprocessing to run them in parallel
+    # Input the videos to the queue
+    for video_path in input_video_file_paths:
+        videos_queue.put(video_path)
 
-    # Wait for the services to finish processing
-    QUEUE_GET_TIMEOUT = 1 / 1000  # seconds
+    # Start the service runners
+    print("Starting service runners...")
+    for runner in service_runners:
+        runner.start()
+
+    # Collect the output from the subtitle service
+    print("Collecting subtitles...")
+    print("\n" * 4)  # Leave some space for the output texts
+    blocking_seconds = 15 / 1000
+    output_srt_buffer: dict[Path, list[SubtitleServiceOutput]] = {}
     while True:
+
+        # Clear the 4 previous lines
+        print("\033[F\033[K" * 4, end="")
+
+        # Print the current status of the queues
+        print(f"Videos to process      : {videos_queue.qsize()}")
+        print(f"Images to process      : {frames_queue.qsize()}")
+        print(f"Timed texts to process : {timed_text_queue.qsize()}")
+        print(f"Subtitles to process   : {subtitles_queue.qsize()}")
+
+        # Collect an item from the subtitles queue
         try:
-            item = subtitle_output_queue.get(timeout=QUEUE_GET_TIMEOUT)
+            item = subtitles_queue.get(timeout=blocking_seconds)
         except Empty:
             pass
-        except ShutDown:
-            print("Subtitle processing is done")
+        except ValueError:
+            print("Subtitles creation done")
+            subtitles_queue.close()
             break
         else:
+            subtitles_queue.task_done()
             if item.source_video not in output_srt_buffer:
                 output_srt_buffer[item.source_video] = []
             output_srt_buffer[item.source_video].append(item)
 
-    # After all services are finished, we can write the sorted subtitles to the output file
+    # Join everything to ensure all services are finished
+    print("Waiting for all services to finish...")
+    for runner in service_runners:
+        runner.join()
+    for queue in (
+        videos_queue,
+        frames_queue,
+        timed_text_queue,
+        subtitles_queue,
+    ):
+        queue.join()
+
+    # Create the writer
+    subrip_writer = SubripWriter()
+
+    # Write the subtitles to the files
+    print("Writing subtitles to output files...")
     for video_path, subtitles in output_srt_buffer.items():
+        subrip_writer.write_subtitles(
+            video_path=video_path,
+            subtitles=subtitles,
+            output_dir=arguments.output,
+        )
 
-        # Sort the subtitles by start time
-        subtitles.sort(key=lambda x: x.start)
-
-        # Write the subtitles to the output file
-        output_file = arguments.output / f"{video_path.stem}.srt"
-        with open(output_file, "w", encoding="utf-8") as f:
-            for i, subtitle in enumerate(subtitles):
-                # Convert start and end times to SRT format
-                start = seconds_to_srt_time(subtitle.start)
-                end = seconds_to_srt_time(subtitle.end)
-                # Write the subtitle in SRT format
-                f.write(f"{i + 1}\n")
-                f.write(f"{start} --> {end}\n")
-                f.write(f"{subtitle.text}\n\n")
+    print("All subtitles written successfully.")
+    print("Bye :)")
 
 
 if __name__ == "__main__":
