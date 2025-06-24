@@ -26,6 +26,10 @@ class _TimedTextBuffer:
     dict: dict[int, _TimedText]
 
 
+# TODO this service does not process the incoming items properly.
+# Idk why, but maybe it deadlocks ?
+
+
 class SubtitleService(Service[OcrServiceOutput, SubtitleServiceOutput]):
     """Service that processes OCR results to create subtitle entries."""
 

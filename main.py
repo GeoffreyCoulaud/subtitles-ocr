@@ -1,17 +1,20 @@
+#!/usr/bin/env python3
+
 import argparse
 
 from mimetypes import guess_file_type
-from multiprocessing import JoinableQueue
+from multiprocessing import Queue
 from pathlib import Path
 from queue import Empty
+from runners.ServiceRunner import ServiceRunner
 from writers.SubripWriter import SubripWriter
 from models.OcrServiceOutput import OcrServiceOutput
 from models.SubtitleServiceOutput import SubtitleServiceOutput
 from models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
 from services.ImageExtractionService import ImageExtractionService
 from services.OcrService import OcrService
-from services.ServiceRunner import ServiceRunner
 from services.SubtitleService import SubtitleService
+from runners.ProcessServiceRunner import ProcessServiceRunner
 
 
 class Arguments(argparse.Namespace):
@@ -23,6 +26,7 @@ class Arguments(argparse.Namespace):
     y_pos: int
     fps: float
     lang: str
+    no_verify: bool
 
 
 def main():
@@ -35,19 +39,22 @@ def main():
     parser.add_argument("--y-pos", type=int, default=380)
     parser.add_argument("--fps", type=float, default=6.0)
     parser.add_argument("--lang", type=str, default="fra")
+    parser.add_argument("--no-verify", action="store_true")
     arguments = parser.parse_args(namespace=Arguments())
 
     # Detect the videos at the input path
+    if not arguments.input.exists():
+        raise ValueError(f"Input path {arguments.input} does not exist")
     raw_input_paths = []
     if arguments.input.is_file():
         raw_input_paths.append(arguments.input)
     elif arguments.input.is_dir():
         for dirent in arguments.input.iterdir():
+            if not dirent.is_file():
+                continue
             raw_input_paths.append(dirent)
     input_video_file_paths = []
     for dirent in raw_input_paths:
-        if not dirent.is_file():
-            continue
         (mime, _encoding) = guess_file_type(dirent)
         if mime is None or not mime.startswith("video/"):
             continue
@@ -60,10 +67,10 @@ def main():
         raise ValueError(f"Output path {arguments.output} is not a directory")
 
     # Create queues for inter-service communication
-    videos_queue = JoinableQueue[Path]()
-    frames_queue = JoinableQueue[ImageExtractionServiceOutput]()
-    timed_text_queue = JoinableQueue[OcrServiceOutput]()
-    subtitles_queue = JoinableQueue[SubtitleServiceOutput]()
+    videos_queue: "Queue[Path]" = Queue()
+    frames_queue: "Queue[ImageExtractionServiceOutput]" = Queue()
+    timed_text_queue: "Queue[OcrServiceOutput]" = Queue()
+    subtitles_queue: "Queue[SubtitleServiceOutput]" = Queue()
 
     # Create the services
     image_extraction_service = ImageExtractionService(
@@ -85,20 +92,34 @@ def main():
     )
 
     # Create the service runners
-    service_runners: list[ServiceRunner] = [
-        ServiceRunner(service=image_extraction_service),
-        ServiceRunner(service=ocr_service),
-        ServiceRunner(service=subtitle_service),
+    # Note: We run the OCR service with a pool size of 4 to allow parallel processing
+    runners: list[ServiceRunner] = [
+        ProcessServiceRunner(service=image_extraction_service),
+        *[
+            # Pool of OCR services
+            ProcessServiceRunner(service=ocr_service)
+            for _ in range(6)
+        ],
+        ProcessServiceRunner(service=subtitle_service),
     ]
 
     # Input the videos to the queue
+    print(f"Inputting {len(input_video_file_paths)} videos to the queue...")
     for video_path in input_video_file_paths:
+        print(f"- {video_path}")
         videos_queue.put(video_path)
+
+    # Check with the user before proceeding
+    if not arguments.no_verify:
+        answer = input("Last check, are you sure you want to proceed? (y/n): ")
+        if answer.lower().strip() not in ("y", "yes"):
+            print("Aborting...")
+            exit(1)
 
     # Start the service runners
     print("Starting service runners...")
-    for runner in service_runners:
-        runner.start()
+    for runner in runners:
+        runner.run()
 
     # Collect the output from the subtitle service
     print("Collecting subtitles...")
@@ -107,7 +128,7 @@ def main():
     output_srt_buffer: dict[Path, list[SubtitleServiceOutput]] = {}
     while True:
 
-        # Clear the 4 previous lines
+        # Clear the 5 previous lines
         print("\033[F\033[K" * 4, end="")
 
         # Print the current status of the queues
@@ -126,22 +147,14 @@ def main():
             subtitles_queue.close()
             break
         else:
-            subtitles_queue.task_done()
             if item.source_video not in output_srt_buffer:
                 output_srt_buffer[item.source_video] = []
             output_srt_buffer[item.source_video].append(item)
 
-    # Join everything to ensure all services are finished
-    print("Waiting for all services to finish...")
-    for runner in service_runners:
+    # Join all the service runners
+    print("Joining service runners...")
+    for runner in runners:
         runner.join()
-    for queue in (
-        videos_queue,
-        frames_queue,
-        timed_text_queue,
-        subtitles_queue,
-    ):
-        queue.join()
 
     # Create the writer
     subrip_writer = SubripWriter()
