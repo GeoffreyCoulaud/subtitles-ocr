@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from models.SubtitleServiceOutput import SubtitleServiceOutput
+from src.main.models.SubtitleServiceOutput import SubtitleServiceOutput
 
 
 class SubripWriter:

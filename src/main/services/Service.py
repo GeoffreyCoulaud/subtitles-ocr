@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
 from multiprocessing import Queue
+from typing import Generic, TypeVar
 
 I = TypeVar("I")
 O = TypeVar("O")

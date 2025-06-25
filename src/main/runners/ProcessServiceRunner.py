@@ -1,6 +1,7 @@
-from runners.ServiceRunner import ServiceRunner
-from services.Service import Service
 from multiprocessing import Process
+
+from src.main.runners.ServiceRunner import ServiceRunner
+from src.main.services.Service import Service
 
 
 class ProcessServiceRunner(ServiceRunner):

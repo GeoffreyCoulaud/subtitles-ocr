@@ -1,8 +1,8 @@
 import pytesseract
 
-from models.OcrServiceOutput import OcrServiceOutput
-from models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
-from services.Service import Service
+from src.main.models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
+from src.main.models.OcrServiceOutput import OcrServiceOutput
+from src.main.services.Service import Service
 
 
 class OcrService(Service[ImageExtractionServiceOutput, OcrServiceOutput]):

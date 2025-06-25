@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-
-from models.OcrServiceOutput import OcrServiceOutput
-from models.SubtitleServiceOutput import SubtitleServiceOutput
-from services.Service import Service
+from src.main.models.OcrServiceOutput import OcrServiceOutput
+from src.main.models.SubtitleServiceOutput import SubtitleServiceOutput
+from src.main.services.Service import Service
 
 
 @dataclass
@@ -102,19 +101,26 @@ class SubtitleService(Service[OcrServiceOutput, SubtitleServiceOutput]):
         - the first item in the buffer (may be the item itself)
         - the item after the first item that has a different text
         """
+
+        result = None
+
         for i in range(item.index, -1, -1):
             if i not in buffer.dict:
                 # There is a gap in the buffer, we cannot determine the past boundary
-                return None
+                break
             elif i == 0:
                 # We reached the beginning of the buffer
-                return buffer.dict[i]
+                result = buffer.dict[i]
+                break
             elif buffer.dict[i].text != item.text:
                 # We found a different text, we just went past the past boundary
-                return buffer.dict[i + 1]
+                result = buffer.dict[i + 1]
+                break
             else:
                 # Should not happen, but just in case
                 raise RuntimeError("Unexpected state: past boundary not found")
+
+        return result
 
     def _find_future_boundary(
         self,
@@ -126,16 +132,23 @@ class SubtitleService(Service[OcrServiceOutput, SubtitleServiceOutput]):
         - the last item in the buffer (may be this item itself)
         - the item before the first item that has a different text
         """
+
+        result = None
+
         for i in range(item.index, buffer.size):
             if i not in buffer.dict:
                 # There is a gap in the buffer, we cannot determine the future boundary
-                return None
+                break
             elif i == buffer.size - 1:
                 # We reached the end of the buffer
-                return buffer.dict[i]
+                result = buffer.dict[i]
+                break
             elif buffer.dict[i].text != item.text:
                 # We found a different text, we just went past the future boundary
-                return buffer.dict[i - 1]
+                result = buffer.dict[i - 1]
+                break
             else:
                 # Should not happen, but just in case
                 raise RuntimeError("Unexpected state: future boundary not found")
+
+        return result

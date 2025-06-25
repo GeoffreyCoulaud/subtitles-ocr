@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 
 import argparse
-
 from mimetypes import guess_file_type
 from multiprocessing import Queue
 from pathlib import Path
 from queue import Empty
-from runners.ServiceRunner import ServiceRunner
-from writers.SubripWriter import SubripWriter
-from models.OcrServiceOutput import OcrServiceOutput
-from models.SubtitleServiceOutput import SubtitleServiceOutput
-from models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
-from services.ImageExtractionService import ImageExtractionService
-from services.OcrService import OcrService
-from services.SubtitleService import SubtitleService
-from runners.ProcessServiceRunner import ProcessServiceRunner
+
+from src.main.models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
+from src.main.models.OcrServiceOutput import OcrServiceOutput
+from src.main.models.SubtitleServiceOutput import SubtitleServiceOutput
+from src.main.runners.ProcessServiceRunner import ProcessServiceRunner
+from src.main.runners.ServiceRunner import ServiceRunner
+from src.main.services.ImageExtractionService import ImageExtractionService
+from src.main.services.OcrService import OcrService
+from src.main.services.SubtitleService import SubtitleService
+from src.main.writers.SubripWriter import SubripWriter
 
 
 class Arguments(argparse.Namespace):

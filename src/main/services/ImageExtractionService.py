@@ -1,10 +1,11 @@
 from fractions import Fraction
 from pathlib import Path
 
-from models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
-from services.Service import Service
-
 import ffmpeg
+
+from src.main.models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
+from src.main.services.Service import Service
+
 
 class ImageExtractionService(Service[Path, ImageExtractionServiceOutput]):
     """Service that extracts frames from video files at a specified frame rate (fps)"""
