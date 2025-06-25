@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.main.models.OcrServiceOutput import OcrServiceOutput
-from src.main.models.SubtitleServiceOutput import SubtitleServiceOutput
-from src.main.services.Service import Service
+from src.main.models.OcrWorkerOutput import OcrWorkerOutput
+from src.main.models.SubtitleEntriesWorkerOutput import SubtitleEntriesWorkerOutput
+from src.main.workers.Worker import Worker
 
 
 @dataclass
@@ -25,29 +25,20 @@ class _TimedTextBuffer:
     dict: dict[int, _TimedText]
 
 
-# TODO this service does not process the incoming items properly.
-# Idk why, but maybe it deadlocks ?
-
-
-class SubtitleService(Service[OcrServiceOutput, SubtitleServiceOutput]):
+class SubtitleEntriesWorker(Worker[OcrWorkerOutput, SubtitleEntriesWorkerOutput]):
     """Service that processes OCR results to create subtitle entries."""
 
-    __buffer: dict[Path, _TimedTextBuffer]
+    name = "Subtitle Processing"
+    input_queue_name = "Timed texts"
+    output_queue_name = "Subtitle entries"
 
-    def __init__(self, input_queue, output_queue):
-        super().__init__(input_queue, output_queue)
-        self.__buffer = {}
+    __buffer: None | _TimedTextBuffer
 
-    def process_item(self, item: OcrServiceOutput) -> list[SubtitleServiceOutput]:
+    def process_item(self, item: OcrWorkerOutput) -> list[SubtitleEntriesWorkerOutput]:
 
-        # Create the source video buffer if it does not exist
-        if item.source_video not in self.__buffer:
-            self.__buffer[item.source_video] = _TimedTextBuffer(
-                size=item.total,
-                dict={},
-            )
-
-        buffer = self.__buffer[item.source_video]
+        # Initialize the buffer if it is not already initialized
+        if self.__buffer is None:
+            self.__buffer = _TimedTextBuffer(size=item.total, dict={})
 
         # Add the item to the buffer
         current_timed_text = _TimedText(
@@ -55,14 +46,14 @@ class SubtitleService(Service[OcrServiceOutput, SubtitleServiceOutput]):
             text=item.text,
             index=item.index,
         )
-        buffer.dict[item.index] = current_timed_text
+        self.__buffer.dict[item.index] = current_timed_text
 
         # --- Shortcut
         # If the item is empty text and has empty text neighbors or void,
         # skip finding the boundaries and outputting a subtitle.
         if current_timed_text.text == "":
-            before = buffer.dict.get(current_timed_text.index - 1, None)
-            after = buffer.dict.get(current_timed_text.index + 1, None)
+            before = self.__buffer.dict.get(current_timed_text.index - 1, None)
+            after = self.__buffer.dict.get(current_timed_text.index + 1, None)
             if (before is None or before.text == "") and (
                 after is None or after.text == ""
             ):
@@ -72,8 +63,8 @@ class SubtitleService(Service[OcrServiceOutput, SubtitleServiceOutput]):
         # Boundaries are defined by the first and last items with the same text in the buffer.
         # Boundaries are inclusive, meaning they include the first and last items with the same text.
         # Boundaries cannot have gaps
-        past_boundary = self._find_past_boundary(buffer, current_timed_text)
-        future_boundary = self._find_future_boundary(buffer, current_timed_text)
+        past_boundary = self._find_past_boundary(self.__buffer, current_timed_text)
+        future_boundary = self._find_future_boundary(self.__buffer, current_timed_text)
         if past_boundary is None or future_boundary is None:
             # We cannot determine the boundaries, we need more items in the buffer
             return []
@@ -81,11 +72,10 @@ class SubtitleService(Service[OcrServiceOutput, SubtitleServiceOutput]):
         # Output a subtitle from the past and future boundaries
         frame_count = future_boundary.index - past_boundary.index + 1
         return [
-            SubtitleServiceOutput(
+            SubtitleEntriesWorkerOutput(
                 start=past_boundary.timestamp,
                 end=future_boundary.timestamp,
                 text=item.text,
-                source_video=item.source_video,
                 frame_size=frame_count,
                 frame_total=item.total,
             )

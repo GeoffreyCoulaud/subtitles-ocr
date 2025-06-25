@@ -3,9 +3,8 @@ from pathlib import Path
 
 
 @dataclass
-class ImageExtractionServiceOutput:
+class FramesWorkerOutput:
     timestamp: float
     index: int
     total: int
     path: Path
-    source_video: Path

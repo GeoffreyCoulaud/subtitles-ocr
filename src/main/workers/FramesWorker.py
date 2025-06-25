@@ -1,14 +1,18 @@
 from fractions import Fraction
 from pathlib import Path
 
-import ffmpeg
+import ffmpeg  # type: ignore
 
-from src.main.models.ImageExtractionServiceOutput import ImageExtractionServiceOutput
-from src.main.services.Service import Service
+from src.main.models.FramesWorkerOutput import FramesWorkerOutput
+from src.main.workers.Worker import Worker
 
 
-class ImageExtractionService(Service[Path, ImageExtractionServiceOutput]):
+class FramesWorker(Worker[Path, FramesWorkerOutput]):
     """Service that extracts frames from video files at a specified frame rate (fps)"""
+
+    name = "Frames Extraction"
+    input_queue_name = "Videos"
+    output_queue_name = "Frames"
 
     __output_dir: Path
     __fps: float
@@ -17,15 +21,12 @@ class ImageExtractionService(Service[Path, ImageExtractionServiceOutput]):
 
     def __init__(
         self,
-        input_queue,
-        output_queue,
-        output_dir: Path,
+        frames_dir: Path,
         fps: float = 2.0,
         crop_height: int = 0,
         y_position: int = 0,
     ):
-        super().__init__(input_queue, output_queue)
-        self.__output_dir = output_dir
+        self.__output_dir = frames_dir
         self.__fps = fps
         self.__crop_height = crop_height
         self.__y_position = y_position
@@ -68,7 +69,7 @@ class ImageExtractionService(Service[Path, ImageExtractionServiceOutput]):
         time_base = self._extract_time_base(item)
 
         # Include index and total count
-        outputs = list[ImageExtractionServiceOutput]()
+        outputs = list[FramesWorkerOutput]()
         extracted_frames = sorted(frames_dir.glob("frame_*.png"))
         for index, frame_path in enumerate(extracted_frames):
 
@@ -77,12 +78,11 @@ class ImageExtractionService(Service[Path, ImageExtractionServiceOutput]):
 
             # Add the new path to the list of renamed frames
             outputs.append(
-                ImageExtractionServiceOutput(
+                FramesWorkerOutput(
                     timestamp=pts * time_base,
                     index=index,
                     total=len(extracted_frames),
                     path=frame_path,
-                    source_video=item,
                 )
             )
 
