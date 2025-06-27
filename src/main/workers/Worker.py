@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from multiprocessing import Queue
+from os import getpid
 from typing import Generic, TypeVar
 
 from src.main.models.WorkerMessage import WorkerMessage
@@ -15,7 +16,7 @@ class Worker(ABC, Generic[I, O]):
     input_queue_name: str
     output_queue_name: str
 
-    _message_queue: "Queue[WorkerMessage]"
+    __message_queue: "Queue[WorkerMessage]"
     """Message queue that may be used to send messages to the orchestrator while processing items."""
 
     def run(
@@ -26,7 +27,8 @@ class Worker(ABC, Generic[I, O]):
     ) -> None:
         """Run the service, processing items from the input queue and putting results in the output queue."""
 
-        self._message_queue = message_queue
+        self.__message_queue = message_queue
+        self._send_message("Starting")
 
         while True:
             try:
@@ -50,11 +52,10 @@ class Worker(ABC, Generic[I, O]):
         for result in final_results:
             output_queue.put(result)
 
-        # Close the output queue to signal that no more items will be outputted
+        # Finalize
         output_queue.close()
-
-        # Close the messages queue to signal that no more messages will be sent
-        self._message_queue.close()
+        self._send_message("Finished")
+        self.__message_queue.close()
 
     @abstractmethod
     def process_item(self, item: I) -> list[O]:
@@ -67,3 +68,17 @@ class Worker(ABC, Generic[I, O]):
         By default, returns an empty list.
         """
         return []
+
+    def _send_message(self, text: str, level: str = "INFO") -> None:
+        """
+        Send a message to the orchestrator.
+        This is used to send messages during processing.
+        """
+        self.__message_queue.put(
+            WorkerMessage(
+                worker_name=self.name,
+                worker_pid=getpid(),
+                message_level=level,
+                message_text=text,
+            )
+        )

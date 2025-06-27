@@ -48,43 +48,50 @@ class FramesWorker(Worker[Path, FramesWorkerOutput]):
     def process_item(self, item):
         """Process a video file to extract frames"""
 
+        self._send_message("Processing video file: %s" % item.name)
+
         # Create a directory for the frames if it does not exist
         # Its name will be the same as the video file without the extension
         frames_dir = self.__output_dir / item.stem
         frames_dir.mkdir(parents=True, exist_ok=True)
 
         # Extract frames with PTS in filenames
-
+        self._send_message(
+            "Extracing frames from video",
+            level="DEBUG",
+        )
         frame_format = str(frames_dir / "frame_%010d.png")
         (
             ffmpeg.input(filename=str(item))
             .filter("fps", fps=self.__fps, round="up")
             .filter("crop", x=0, y=self.__y_position, w="in_w", h=self.__crop_height)
             .output(filename=frame_format, frame_pts=True)
-            .run()
-            # .run(**{"-hide_banner": 1, "-loglevel": "info"})
+            .run(**{"-hide_banner": 1, "-loglevel": "info"})
+            # .run()
         )
 
         # Extract the time base of the video to calculate timestamps
         time_base = self._extract_time_base(item)
+        self._send_message(
+            "Extracted time base %f from video" % time_base,
+            level="DEBUG",
+        )
 
         # Include index and total count
-        outputs = list[FramesWorkerOutput]()
         extracted_frames = sorted(frames_dir.glob("frame_*.png"))
-        for index, frame_path in enumerate(extracted_frames):
-
-            # Extract the PTS from the original filename
-            pts = float(frame_path.stem.split("_")[1])
-
-            # Add the new path to the list of renamed frames
-            outputs.append(
-                FramesWorkerOutput(
-                    timestamp=pts * time_base,
-                    index=index,
-                    total=len(extracted_frames),
-                    path=frame_path,
-                )
+        outputs = [
+            FramesWorkerOutput(
+                timestamp=float(frame_path.stem.split("_")[1]) * time_base,
+                index=index,
+                total=len(extracted_frames),
+                path=frame_path,
             )
+            for index, frame_path in enumerate(extracted_frames)
+        ]
 
         # Return the extracted frames with new names
+        self._send_message(
+            "Extracted %d frames from video %s" % (len(outputs), item.name),
+            level="INFO",
+        )
         return outputs
