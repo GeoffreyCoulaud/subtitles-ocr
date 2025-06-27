@@ -54,6 +54,7 @@ def main():
             fps=arguments.fps,
             crop_height=arguments.crop_height,
             y_position=arguments.y_pos,
+            brightness_threshold=0.62,
         )
 
         ocr_worker = OcrWorker(lang=arguments.lang)
@@ -65,7 +66,7 @@ def main():
         orchestrator = Orchestrator[Path, Path](
             workers=[
                 (frames_worker, 1),
-                (ocr_worker, 6),
+                (ocr_worker, 1),
                 (subtitle_entries_worker, 1),
                 (subtitle_file_worker, 1),
             ]

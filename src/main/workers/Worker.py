@@ -28,7 +28,7 @@ class Worker(ABC, Generic[I, O]):
         """Run the service, processing items from the input queue and putting results in the output queue."""
 
         self.__message_queue = message_queue
-        self._send_message("Starting")
+        self._send_message("Started", level="DEBUG")
 
         while True:
             try:
@@ -54,7 +54,7 @@ class Worker(ABC, Generic[I, O]):
 
         # Finalize
         output_queue.close()
-        self._send_message("Finished")
+        self._send_message("Finished", level="DEBUG")
         self.__message_queue.close()
 
     @abstractmethod

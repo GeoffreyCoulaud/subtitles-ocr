@@ -1,7 +1,7 @@
 from fractions import Fraction
 from pathlib import Path
-
-import ffmpeg  # type: ignore
+import subprocess
+import json
 
 from src.main.models.FramesWorkerOutput import FramesWorkerOutput
 from src.main.workers.Worker import Worker
@@ -10,7 +10,7 @@ from src.main.workers.Worker import Worker
 class FramesWorker(Worker[Path, FramesWorkerOutput]):
     """Service that extracts frames from video files at a specified frame rate (fps)"""
 
-    name = "Frames Extraction"
+    name = "Frames extraction"
     input_queue_name = "Videos"
     output_queue_name = "Frames"
 
@@ -18,18 +18,21 @@ class FramesWorker(Worker[Path, FramesWorkerOutput]):
     __fps: float
     __crop_height: int
     __y_position: int
+    __brightness_threshold: float
 
     def __init__(
         self,
         frames_dir: Path,
-        fps: float = 2.0,
-        crop_height: int = 0,
-        y_position: int = 0,
+        fps: float,
+        crop_height: int,
+        y_position: int,
+        brightness_threshold: float,
     ):
         self.__output_dir = frames_dir
         self.__fps = fps
         self.__crop_height = crop_height
         self.__y_position = y_position
+        self.__brightness_threshold = brightness_threshold
 
     def _extract_time_base(self, video_path: Path) -> float:
         """
@@ -37,38 +40,53 @@ class FramesWorker(Worker[Path, FramesWorkerOutput]):
         The time base is the fraction of seconds per frame
         This is used to calculate the timestamps of the extracted frames.
         """
-        result = ffmpeg.probe(
-            filename=str(video_path),
-            loglevel="quiet",  # Suppress output
-            select_streams="v:0",  # Select the first video stream
-        )
-        time_base_string = result["streams"][0]["time_base"].strip()
+        # Build ffprobe command to get video stream info as JSON
+        cmd = [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-select_streams",
+            "v:0",
+            "-print_format",
+            "json",
+            "-show_streams",
+            str(video_path),
+        ]
+
+        # Run ffprobe and capture output
+        process = subprocess.run(cmd, check=True, capture_output=True, text=True)
+
+        # Parse the JSON output
+        stdout = json.loads(process.stdout)
+        time_base_string = stdout["streams"][0]["time_base"].strip()
         return float(Fraction(time_base_string))
+
+    def _extract_frames(self, path: Path, frame_format: str) -> None:
+        filters = [
+            f"fps={self.__fps}:round=up",  # Set the frame rate
+            f"crop=in_w:{self.__crop_height}:0:{self.__y_position}",  # Crop the video
+        ]
+        cmd = [
+            "ffmpeg",
+            "-i",
+            str(path),
+            "-vf",
+            ",".join(filters),
+            "-frame_pts",
+            "1",
+            frame_format,
+        ]
+        subprocess.run(cmd, check=True)
 
     def process_item(self, item):
         """Process a video file to extract frames"""
 
         self._send_message("Processing video file: %s" % item.name)
 
-        # Create a directory for the frames if it does not exist
-        # Its name will be the same as the video file without the extension
-        frames_dir = self.__output_dir / item.stem
-        frames_dir.mkdir(parents=True, exist_ok=True)
-
         # Extract frames with PTS in filenames
-        self._send_message(
-            "Extracing frames from video",
-            level="DEBUG",
-        )
-        frame_format = str(frames_dir / "frame_%010d.png")
-        (
-            ffmpeg.input(filename=str(item))
-            .filter("fps", fps=self.__fps, round="up")
-            .filter("crop", x=0, y=self.__y_position, w="in_w", h=self.__crop_height)
-            .output(filename=frame_format, frame_pts=True)
-            .run(**{"-hide_banner": 1, "-loglevel": "info"})
-            # .run()
-        )
+        self._send_message("Extracting frames from video", level="DEBUG")
+        frame_format = str(self.__output_dir / "frame_%010d.png")
+        self._extract_frames(item, frame_format)
 
         # Extract the time base of the video to calculate timestamps
         time_base = self._extract_time_base(item)
@@ -78,7 +96,7 @@ class FramesWorker(Worker[Path, FramesWorkerOutput]):
         )
 
         # Include index and total count
-        extracted_frames = sorted(frames_dir.glob("frame_*.png"))
+        extracted_frames = sorted(self.__output_dir.glob("frame_*.png"))
         outputs = [
             FramesWorkerOutput(
                 timestamp=float(frame_path.stem.split("_")[1]) * time_base,

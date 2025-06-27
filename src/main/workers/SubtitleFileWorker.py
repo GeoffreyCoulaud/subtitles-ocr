@@ -7,7 +7,7 @@ from src.main.workers.Worker import Worker
 class SubtitleFileWorker(Worker[SubtitleEntriesWorkerOutput, Path]):
     """Service that processes subtitle entries to create a subtitle file."""
 
-    name = "Subtitle File Building"
+    name = "Subtitle file"
     input_queue_name = "Subtitle entries"
     output_queue_name = "Subtitle file path"
 
@@ -20,10 +20,18 @@ class SubtitleFileWorker(Worker[SubtitleEntriesWorkerOutput, Path]):
 
     def process_item(self, item):
         # Do nothing until the entire input queue has been collected
+        self._send_message(
+            "[%f -> %f] Adding subtitle entry to buffer" % (item.start, item.end),
+            level="DEBUG",
+        )
         self.__entries.append(item)
         return []
 
     def process_no_more_items(self) -> list[Path]:
+        self._send_message(
+            "No more items in the input queue, writing subtitles to file",
+            level="INFO",
+        )
         # Write the entries to the output file
         self.__write_subtitles(self.__entries, self.__output_path)
         # Return the output path as the result

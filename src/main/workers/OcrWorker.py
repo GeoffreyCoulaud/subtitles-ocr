@@ -18,11 +18,19 @@ class OcrWorker(Worker[FramesWorkerOutput, OcrWorkerOutput]):
         self.__lang = lang
 
     def process_item(self, item: FramesWorkerOutput) -> list[OcrWorkerOutput]:
+
         text = pytesseract.image_to_string(
             image=str(item.path),
             lang=self.__lang,
             config="--psm 6",  # Assuming a single block of text, no layout analysis
         ).strip()
+
+        self._send_message(
+            "[%d/%d] %f text : %s"
+            % (item.index, item.total, item.timestamp, text.replace("\n", " ")),
+            level="DEBUG",
+        )
+
         return [
             OcrWorkerOutput(
                 text=text,

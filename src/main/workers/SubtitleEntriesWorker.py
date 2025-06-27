@@ -28,7 +28,7 @@ class _TimedTextBuffer:
 class SubtitleEntriesWorker(Worker[OcrWorkerOutput, SubtitleEntriesWorkerOutput]):
     """Service that processes OCR results to create subtitle entries."""
 
-    name = "Subtitle Processing"
+    name = "Subtitles"
     input_queue_name = "Timed texts"
     output_queue_name = "Subtitle entries"
 
@@ -38,9 +38,18 @@ class SubtitleEntriesWorker(Worker[OcrWorkerOutput, SubtitleEntriesWorkerOutput]
 
         # Initialize the buffer if it is not already initialized
         if self.__buffer is None:
+            self._send_message(
+                "Initializing subtitle buffer, size %d" % item.total,
+                level="DEBUG",
+            )
             self.__buffer = _TimedTextBuffer(size=item.total, dict={})
 
         # Add the item to the buffer
+        self._send_message(
+            "[%d/%d] %f Adding item to buffer"
+            % (item.index, item.total, item.timestamp),
+            level="DEBUG",
+        )
         current_timed_text = _TimedText(
             timestamp=item.timestamp,
             text=item.text,
@@ -57,6 +66,10 @@ class SubtitleEntriesWorker(Worker[OcrWorkerOutput, SubtitleEntriesWorkerOutput]
             if (before is None or before.text == "") and (
                 after is None or after.text == ""
             ):
+                self._send_message(
+                    "[%d/%d] Empty text item, skipping" % (item.index, item.total),
+                    level="DEBUG",
+                )
                 return []
 
         # Find the boundaries of the subtitle group
@@ -68,6 +81,12 @@ class SubtitleEntriesWorker(Worker[OcrWorkerOutput, SubtitleEntriesWorkerOutput]
         if past_boundary is None or future_boundary is None:
             # We cannot determine the boundaries, we need more items in the buffer
             return []
+
+        self._send_message(
+            "[%d/%d] Found boundaries: %d -> %d"
+            % (item.index, item.total, past_boundary.index, future_boundary.index),
+            level="DEBUG",
+        )
 
         # Output a subtitle from the past and future boundaries
         frame_count = future_boundary.index - past_boundary.index + 1
