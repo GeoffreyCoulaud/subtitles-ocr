@@ -21,7 +21,6 @@ class Arguments(argparse.Namespace):
     y_pos: int
     fps: float
     lang: str
-    no_verify: bool
 
 
 def main():
@@ -34,7 +33,6 @@ def main():
     parser.add_argument("--y-pos", type=int, default=380)
     parser.add_argument("--fps", type=float, default=6.0)
     parser.add_argument("--lang", type=str, default="fra")
-    parser.add_argument("--no-verify", action="store_true")
     arguments = parser.parse_args(namespace=Arguments())
 
     # Check the input path
