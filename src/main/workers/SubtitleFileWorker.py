@@ -20,10 +20,6 @@ class SubtitleFileWorker(Worker[SubtitleEntriesWorkerOutput, Path]):
 
     def process_item(self, item):
         # Do nothing until the entire input queue has been collected
-        self._send_message(
-            "[%f -> %f] Adding subtitle entry to buffer" % (item.start, item.end),
-            level="DEBUG",
-        )
         self.__entries.append(item)
         return []
 

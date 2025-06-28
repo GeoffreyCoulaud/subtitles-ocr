@@ -9,4 +9,5 @@ dependencies = [
     "pillow>=11.2.1",
     "ffmpeg-python>=0.2.0",
     "rich>=14.0.0",
+    "numpy",
 ]

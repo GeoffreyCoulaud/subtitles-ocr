@@ -42,7 +42,7 @@ class Worker(ABC, Generic[I, O]):
             try:
                 results = self.process_item(item)
             except Exception as e:
-                print(f"Error processing item {item}: {e}")
+                self._send_message(f"Error processing item {item}\n{e}")
                 break
             for result in results:
                 output_queue.put(result)

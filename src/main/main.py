@@ -6,6 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from src.main.orchestrator.Orchestrator import Orchestrator
+from src.main.workers.MaskWorker import MaskWorker
 from src.main.workers.FramesWorker import FramesWorker
 from src.main.workers.OcrWorker import OcrWorker
 from src.main.workers.SubtitleEntriesWorker import SubtitleEntriesWorker
@@ -54,19 +55,17 @@ def main():
             fps=arguments.fps,
             crop_height=arguments.crop_height,
             y_position=arguments.y_pos,
-            brightness_threshold=0.62,
         )
-
+        mask_worker = MaskWorker(saturation_threshold=20)
         ocr_worker = OcrWorker(lang=arguments.lang)
-
         subtitle_entries_worker = SubtitleEntriesWorker()
-
         subtitle_file_worker = SubtitleFileWorker(subtitle_path=arguments.output)
 
         orchestrator = Orchestrator[Path, Path](
             workers=[
                 (frames_worker, 1),
-                (ocr_worker, 1),
+                (mask_worker, 4),
+                (ocr_worker, 5),
                 (subtitle_entries_worker, 1),
                 (subtitle_file_worker, 1),
             ]

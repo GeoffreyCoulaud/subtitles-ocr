@@ -54,7 +54,7 @@ def tui(**kwargs: Unpack[TuiKwargs]) -> None:
     layout = Layout()
     layout.split_column(
         Layout(name="spinner", size=3),
-        Layout(name="status", size=6),
+        Layout(name="status", size=7),
         Layout(name="messages"),
     )
 

@@ -11,6 +11,3 @@ class SubtitleEntriesWorkerOutput:
 
     frame_size: int
     """Number of frames in the subtitle"""
-
-    frame_total: int
-    """Total number of frames in the video"""

@@ -18,7 +18,6 @@ class FramesWorker(Worker[Path, FramesWorkerOutput]):
     __fps: float
     __crop_height: int
     __y_position: int
-    __brightness_threshold: float
 
     def __init__(
         self,
@@ -26,13 +25,11 @@ class FramesWorker(Worker[Path, FramesWorkerOutput]):
         fps: float,
         crop_height: int,
         y_position: int,
-        brightness_threshold: float,
     ):
         self.__output_dir = frames_dir
         self.__fps = fps
         self.__crop_height = crop_height
         self.__y_position = y_position
-        self.__brightness_threshold = brightness_threshold
 
     def _extract_time_base(self, video_path: Path) -> float:
         """
