@@ -13,34 +13,23 @@ from tempfile import TemporaryDirectory
 from fractions import Fraction
 from shutil import move
 
+from src.main.lib.print_banner import print_banner
+from src.main.lib.handle_keyboard_interrupt import handle_keyboard_interrupt
+from src.main.lib.frame_number_to_timestamp import frame_number_to_timestamp
+
 
 class Arguments(Namespace):
     video_path: Path
     output_dir: Path
 
 
-def print_banner(message: str, width: int = 80) -> None:
-    """Print a banner with the given message."""
-    padded_message = f"{message:^{width - 4}}"
-    print("┌" + "─" * (width - 2) + "┐")
-    print(f"│ {padded_message} │")
-    print("└" + "─" * (width - 2) + "┘")
-
-
-def frame_number_to_timestamp(frame_number: int, fps: float) -> str:
-    """Convert a frame number to a timestamp string in the format HH:MM:SS,mmm."""
-    total_seconds = frame_number / fps
-    hours = int(total_seconds // 3600)
-    minutes = int((total_seconds % 3600) // 60)
-    seconds = int(total_seconds % 60)
-    milliseconds = int((total_seconds - int(total_seconds)) * 1000)
-    return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
-
-
+@handle_keyboard_interrupt
 def main():
 
     # Parse command line arguments
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Extract frames from a video file and rename them with frame number and timestamp."
+    )
     parser.add_argument("video_path", type=Path)
     parser.add_argument("output_dir", type=Path)
     args = parser.parse_args(namespace=Arguments())

@@ -8,6 +8,13 @@ dependencies = [
   # No additional dependencies at the moment
 ]
 
+[project.scripts]
+extract-frames = "src.main.scripts.extract_frames:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
 
 [project.optional-dependencies]
 cpu = [
@@ -79,3 +86,7 @@ explicit = true
 name = "pytorch-xpu"
 url = "https://download.pytorch.org/whl/xpu"
 explicit = true
+
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"

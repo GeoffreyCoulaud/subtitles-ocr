@@ -2,11 +2,28 @@
 
 A harcoded subtitles extractor
 
-## Local development setup
+## Usage
 
-This project uses `uv` for project management.
+1. Install
 
-TODO - add more info here
+```bash 
+# Choose the right hardware configuration depending on your environment.
+# See https://github.com/GeoffreyCoulaud/uv-pytorch-template
+uv sync --dev --extra <cpu|cu128|rocm|xpu>
+```
+
+2. Run scripts
+
+```bash
+# Extract frames from a video
+uv run extract-frames <video_path> <output_dir>
+```
+
+## Adding New Scripts
+
+1. Create your script in `src/main/scripts/`
+2. Add an entry point in `pyproject.toml` under `[project.scripts]`
+3. Run `uv sync --dev` to update the environment
 
 ## Architecture
 
