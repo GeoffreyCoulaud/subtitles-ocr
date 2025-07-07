@@ -3,11 +3,79 @@ name = "subtitles-ocr"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
-    "pytesseract>=0.3.13",
-    "pillow>=11.2.1",
-    "ffmpeg-python>=0.2.0",
-    "rich>=14.0.0",
-    "numpy",
+  # No additional dependencies at the moment
 ]
+
+
+[project.optional-dependencies]
+cpu = [
+  "torch>=2.7.0",
+  "torchvision>=0.22.0",
+]
+cu128 = [
+  "torch>=2.7.0",
+  "torchvision>=0.22.0",
+]
+rocm = [
+  "torch>=2.7.0",
+  "torchvision>=0.22.0",
+  "pytorch-triton-rocm>=3.3.0",
+]
+xpu = [
+  "torch>=2.7.0",
+  "torchvision>=0.22.0",
+  "pytorch-triton-xpu>=3.3.0"
+]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "rocm" },
+    { extra = "cu128" },
+    { extra = "xpu" },
+  ],
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-rocm", extra = "rocm" },
+  { index = "pytorch-cu128", extra = "cu128" },
+  { index = "pytorch-xpu", extra = "xpu" }
+]
+torchvision = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-rocm", extra = "rocm" },
+  { index = "pytorch-cu128", extra = "cu128" },
+  { index = "pytorch-xpu", extra = "xpu" }
+]
+pytorch-triton-rocm = [
+  { index = "pytorch-rocm", extra = "rocm" }
+]
+pytorch-triton-xpu = [
+  { index = "pytorch-xpu", extra = "xpu" }
+]
+
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm6.3"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = true
