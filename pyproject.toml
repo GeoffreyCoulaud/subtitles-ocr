@@ -4,9 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-  # No additional dependencies at the moment
-]
+dependencies = ["opencv-python>=4.12"]
 
 [project.scripts]
 extract-frames = "src.main.scripts.extract_frames:main"
@@ -17,24 +15,10 @@ include = ["src*"]
 
 
 [project.optional-dependencies]
-cpu = [
-  "torch>=2.7.0",
-  "torchvision>=0.22.0",
-]
-cu128 = [
-  "torch>=2.7.0",
-  "torchvision>=0.22.0",
-]
-rocm = [
-  "torch>=2.7.0",
-  "torchvision>=0.22.0",
-  "pytorch-triton-rocm>=3.3.0",
-]
-xpu = [
-  "torch>=2.7.0",
-  "torchvision>=0.22.0",
-  "pytorch-triton-xpu>=3.3.0"
-]
+cpu = ["torch>=2.7.0", "torchvision>=0.22.0"]
+cu128 = ["torch>=2.7.0", "torchvision>=0.22.0"]
+rocm = ["torch>=2.7.0", "torchvision>=0.22.0", "pytorch-triton-rocm>=3.3.0"]
+xpu = ["torch>=2.7.0", "torchvision>=0.22.0", "pytorch-triton-xpu>=3.3.0"]
 
 [tool.uv]
 conflicts = [
@@ -51,20 +35,16 @@ torch = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-rocm", extra = "rocm" },
   { index = "pytorch-cu128", extra = "cu128" },
-  { index = "pytorch-xpu", extra = "xpu" }
+  { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchvision = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-rocm", extra = "rocm" },
   { index = "pytorch-cu128", extra = "cu128" },
-  { index = "pytorch-xpu", extra = "xpu" }
+  { index = "pytorch-xpu", extra = "xpu" },
 ]
-pytorch-triton-rocm = [
-  { index = "pytorch-rocm", extra = "rocm" }
-]
-pytorch-triton-xpu = [
-  { index = "pytorch-xpu", extra = "xpu" }
-]
+pytorch-triton-rocm = [{ index = "pytorch-rocm", extra = "rocm" }]
+pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 
 
 [[tool.uv.index]]
