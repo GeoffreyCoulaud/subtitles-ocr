@@ -13,12 +13,33 @@ extract-frames = "src.main.scripts.extract_frames:main"
 where = ["."]
 include = ["src*"]
 
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project.optional-dependencies]
-cpu = ["torch>=2.7.0", "torchvision>=0.22.0"]
-cu128 = ["torch>=2.7.0", "torchvision>=0.22.0"]
-rocm = ["torch>=2.7.0", "torchvision>=0.22.0", "pytorch-triton-rocm>=3.3.0"]
-xpu = ["torch>=2.7.0", "torchvision>=0.22.0", "pytorch-triton-xpu>=3.3.0"]
+cpu = [
+  "paddlepaddle==3.1.0",
+  "torch>=2.7.0",
+  "torchvision>=0.22.0"
+]
+cu128 = [
+  "paddlepaddle-gpu==3.1.0",
+  "torch>=2.7.0",
+  "torchvision>=0.22.0"
+]
+rocm = [
+  "paddlepaddle==3.1.0",
+  "torch>=2.7.0",
+  "torchvision>=0.22.0",
+  "pytorch-triton-rocm>=3.3.0"
+]
+xpu = [
+  "paddlepaddle==3.1.0",
+  "torch>=2.7.0",
+  "torchvision>=0.22.0",
+  "pytorch-triton-xpu>=3.3.0"
+]
 
 [tool.uv]
 conflicts = [
@@ -43,9 +64,20 @@ torchvision = [
   { index = "pytorch-cu128", extra = "cu128" },
   { index = "pytorch-xpu", extra = "xpu" },
 ]
-pytorch-triton-rocm = [{ index = "pytorch-rocm", extra = "rocm" }]
-pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
-
+pytorch-triton-rocm = [
+  { index = "pytorch-rocm", extra = "rocm" }
+]
+pytorch-triton-xpu = [
+  { index = "pytorch-xpu", extra = "xpu" }
+]
+paddlepaddle = [
+  { index = "paddle-cpu", extra = "cpu" },
+  { index = "paddle-cpu", extra = "xpu" },
+  { index = "paddle-cpu", extra = "rocm" },
+]
+paddlepaddle-gpu = [
+  { index = "paddle-129", extra = "cu128" }
+]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -67,6 +99,12 @@ name = "pytorch-xpu"
 url = "https://download.pytorch.org/whl/xpu"
 explicit = true
 
-[build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
+[[tool.uv.index]]
+name = "paddle-cpu"
+url = "https://www.paddlepaddle.org.cn/packages/stable/cpu/"
+explicit = true
+
+[[tool.uv.index]]
+name = "paddle-129"
+url = "https://www.paddlepaddle.org.cn/packages/stable/cu129/"
+explicit = true
