@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["opencv-python>=4.12"]
+dependencies = [
+  "opencv-python>=4.12",
+  "paddleocr>=3.1.0"
+]
 
 [project.scripts]
 extract-frames = "src.main.scripts.extract_frames:main"
@@ -23,7 +26,7 @@ cpu = [
   "torch>=2.7.0",
   "torchvision>=0.22.0"
 ]
-cu128 = [
+cu129 = [
   "paddlepaddle-gpu==3.1.0",
   "torch>=2.7.0",
   "torchvision>=0.22.0"
@@ -46,7 +49,7 @@ conflicts = [
   [
     { extra = "cpu" },
     { extra = "rocm" },
-    { extra = "cu128" },
+    { extra = "cu129" },
     { extra = "xpu" },
   ],
 ]
@@ -55,13 +58,13 @@ conflicts = [
 torch = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-rocm", extra = "rocm" },
-  { index = "pytorch-cu128", extra = "cu128" },
+  { index = "pytorch-cu129", extra = "cu129" },
   { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchvision = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-rocm", extra = "rocm" },
-  { index = "pytorch-cu128", extra = "cu128" },
+  { index = "pytorch-cu129", extra = "cu129" },
   { index = "pytorch-xpu", extra = "xpu" },
 ]
 pytorch-triton-rocm = [
@@ -76,7 +79,7 @@ paddlepaddle = [
   { index = "paddle-cpu", extra = "rocm" },
 ]
 paddlepaddle-gpu = [
-  { index = "paddle-129", extra = "cu128" }
+  { index = "paddle-129", extra = "cu129" }
 ]
 
 [[tool.uv.index]]
@@ -90,7 +93,7 @@ url = "https://download.pytorch.org/whl/rocm6.3"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cu128"
+name = "pytorch-cu129"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 

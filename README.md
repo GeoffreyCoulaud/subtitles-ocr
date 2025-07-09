@@ -9,7 +9,7 @@ A harcoded subtitles extractor
 ```bash 
 # Choose the right hardware configuration depending on your environment.
 # See https://github.com/GeoffreyCoulaud/uv-pytorch-template
-uv sync --dev --extra <cpu|cu128|rocm|xpu>
+uv pip install -e '.[cpu]' # Or cu129, rocm, xpu
 ```
 
 2. Run scripts
