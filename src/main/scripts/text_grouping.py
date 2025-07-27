@@ -1,5 +1,4 @@
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable
 import json
 from pathlib import Path
 from typing import TypedDict
@@ -7,6 +6,7 @@ from typing import TypedDict
 from cv2 import RotatedRect, minAreaRect
 import numpy as np
 
+from src.main.lib.display_image_with_rects import display_image_with_rects
 from src.main.lib.print_banner import print_banner
 from src.main.lib.rotated_rectangle import RotatedRectangleDto
 
@@ -50,7 +50,7 @@ def main():
         help="Max angle threshold for merging rectangles",
     )
     parser.add_argument(
-        "--debug_display",
+        "--debug-display",
         action="store_true",
         help="Display an image with detected text areas for debugging purposes.",
     )
@@ -86,9 +86,7 @@ def main():
 
     # Merge groups of rectangle to a single rectangle
     print_banner("Merging groups of rectangles")
-    merged_groups = [
-        (combine_rectangles(group) if len(group) > 1 else group[0]) for group in groups
-    ]
+    merged_groups = [combine_rectangles(group) for group in groups]
 
     # Save the consolidated rectangles to the output directory
     print_banner("Saving results")
@@ -110,7 +108,7 @@ def main():
     # If debug display is enabled, show the image with detected text areas
     if args.debug_display:
         print_banner("Displaying grouped text areas")
-        display_image_with_rects(data["source_image_path"], merged_groups)  # type: ignore
+        display_image_with_rects(Path(data["source_image_path"]), merged_groups)
 
 
 def group_rectangles(
@@ -196,12 +194,14 @@ def combine_rectangles(rectangles: list[RotatedRect]) -> RotatedRect:
     """
     Combine a list of rectangles into a single rectangle encompassing them.
     """
-    return minAreaRect(
+    raw = minAreaRect(
         np.array(
             [point for rect in rectangles for point in rect.points()],
             dtype=np.float32,
         )
-    )  # type: ignore
+    )
+
+    return RotatedRect(center=raw[0], size=raw[1], angle=raw[2])
 
 
 if __name__ == "__main__":

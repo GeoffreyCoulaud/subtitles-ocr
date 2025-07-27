@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TypedDict
 
 import cv2
+from cv2 import RotatedRect
 
 from src.main.lib.display_image_with_rects import display_image_with_rects
 from src.main.lib.print_banner import print_banner
@@ -43,7 +44,7 @@ def main():
         help="Confidence threshold for filtering detected text areas.",
     )
     parser.add_argument(
-        "--debug_display",
+        "--debug-display",
         action="store_true",
         help="Display an image with detected text areas for debugging purposes.",
     )
@@ -63,10 +64,18 @@ def main():
     image = cv2.imread(str(args.image_path))
     if image is None:
         raise ValueError(f"Could not read image from {args.image_path}")
+    net.setInputParams(
+        scale=1.0 / 255.0,
+        size=image.shape[:2][::-1],
+        mean=(122.67891434, 116.66876762, 104.00698793),
+    )
 
     # Detect the text areas in the image using DBnet
     print_banner("Detecting text areas")
-    results = zip(*net.detectTextRectangles(frame=image))
+    results = [
+        (RotatedRect(center=rect[0], size=rect[1], angle=rect[2]), confidence)
+        for rect, confidence in zip(*net.detectTextRectangles(frame=image))
+    ]
 
     # Remove results with low confidence
     print_banner("Pruning results by confidence")
