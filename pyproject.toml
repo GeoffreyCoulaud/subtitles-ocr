@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "opencv-python>=4.12",
-  "paddleocr>=3.1.0"
+  "numpy>=2.3.2"
 ]
 
 [tool.setuptools.packages.find]
@@ -19,23 +19,19 @@ build-backend = "setuptools.build_meta"
 
 [project.optional-dependencies]
 cpu = [
-  "paddlepaddle==3.1.0",
   "torch>=2.7.0",
   "torchvision>=0.22.0"
 ]
 cu129 = [
-  "paddlepaddle-gpu==3.1.0",
   "torch>=2.7.0",
   "torchvision>=0.22.0"
 ]
 rocm = [
-  "paddlepaddle==3.1.0",
   "torch>=2.7.0",
   "torchvision>=0.22.0",
   "pytorch-triton-rocm>=3.3.0"
 ]
 xpu = [
-  "paddlepaddle==3.1.0",
   "torch>=2.7.0",
   "torchvision>=0.22.0",
   "pytorch-triton-xpu>=3.3.0"
@@ -70,14 +66,6 @@ pytorch-triton-rocm = [
 pytorch-triton-xpu = [
   { index = "pytorch-xpu", extra = "xpu" }
 ]
-paddlepaddle = [
-  { index = "paddle-cpu", extra = "cpu" },
-  { index = "paddle-cpu", extra = "xpu" },
-  { index = "paddle-cpu", extra = "rocm" },
-]
-paddlepaddle-gpu = [
-  { index = "paddle-129", extra = "cu129" }
-]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -97,14 +85,4 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-xpu"
 url = "https://download.pytorch.org/whl/xpu"
-explicit = true
-
-[[tool.uv.index]]
-name = "paddle-cpu"
-url = "https://www.paddlepaddle.org.cn/packages/stable/cpu/"
-explicit = true
-
-[[tool.uv.index]]
-name = "paddle-129"
-url = "https://www.paddlepaddle.org.cn/packages/stable/cu129/"
 explicit = true
