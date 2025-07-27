@@ -9,9 +9,6 @@ dependencies = [
   "paddleocr>=3.1.0"
 ]
 
-[project.scripts]
-extract-frames = "src.main.scripts.extract_frames:main"
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]

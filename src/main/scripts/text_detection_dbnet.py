@@ -1,15 +1,23 @@
 from argparse import ArgumentParser, Namespace
+import json
 from pathlib import Path
+from typing import TypedDict
 
 import cv2
 
 from src.main.lib.print_banner import print_banner
+from src.main.lib.rotated_rectangle import RotatedRectangleDto
 
 
 class Arguments(Namespace):
     image_path: Path
     output_dir: Path
     dbnet_model_path: Path
+
+
+class Output(TypedDict):
+    source_image_path: str
+    rectangles: list[RotatedRectangleDto]
 
 
 def main():
@@ -36,25 +44,39 @@ def main():
         raise ValueError(f"Output {args.output_dir} is not a directory.")
 
     # Load the image and the pre-trained DBnet model
+    print_banner("Loading DBnet")
     net = cv2.dnn.TextDetectionModel_DB(model=str(args.dbnet_model_path))
     image = cv2.imread(str(args.image_path))
     if image is None:
         raise ValueError(f"Could not read image from {args.image_path}")
 
     # Detect the text areas in the image using DBnet
-    zones = net.detectTextRectangles(frame=image)
-    if not zones:
-        print_banner("No text detected in the image")
+    print_banner("Detecting text areas")
+    results = zip(*net.detectTextRectangles(frame=image))
 
-    # - Take each zone
-    # - get it's xy bounds
-    # - crop the image to the bounds
-    # - mask out the outside of the zone in the bounds
-    # - save the cropped image to the output directory
+    # Remove results with low confidence
+    print_banner("Pruning results by confidence")
+    CONFIDENCE_THRESHOLD = 0.8
+    pruned_results = [
+        rect for rect, confidence in results if confidence >= CONFIDENCE_THRESHOLD
+    ]
 
-    # TODO - How to save the bounds/box coordinates properly?
-    # TODO - Try direct text recognition with PaddleOCR v5 multi-lingual model (in another script)
-    raise NotImplementedError("Text detection output processing is not implemented yet")
+    # Output the results
+    print_banner("Saving results")
+    output = Output(
+        source_image_path=str(args.image_path),
+        rectangles=[
+            RotatedRectangleDto(
+                center=rect.center,  # type: ignore
+                size=rect.size,  # type: ignore
+                angle=rect.angle,  # type: ignore
+            )
+            for rect in pruned_results
+        ],
+    )
+    output_file_path = args.output_dir / args.image_path.with_suffix(".json").name
+    with open(output_file_path, "w") as output_file:
+        json.dump(output, output_file, indent=4, sort_keys=True)
 
 
 if __name__ == "__main__":
