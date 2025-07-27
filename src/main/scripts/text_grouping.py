@@ -1,4 +1,5 @@
 from argparse import ArgumentParser, Namespace
+from collections.abc import Callable
 import json
 from pathlib import Path
 from typing import TypedDict
@@ -13,19 +14,46 @@ from src.main.lib.rotated_rectangle import RotatedRectangleDto
 class Arguments(Namespace):
     input_path: Path
     output_dir: Path
+    distance_threshold: float
+    angle_threshold: float
+    debug_display: bool
+
+
+class Input(TypedDict):
+    source_image_path: str
+    rectangles: list[RotatedRectangleDto]
 
 
 class Output(TypedDict):
     source_image_path: str
-    rectangle: RotatedRectangleDto
+    rectangles: list[RotatedRectangleDto]
 
 
 def main():
 
     # Parse command line arguments
-    parser = ArgumentParser(description="")
+    parser = ArgumentParser(
+        description="Merge cv2 rotated rectangles by proximity and angle similarity."
+    )
     parser.add_argument("input_path", type=Path)
     parser.add_argument("output_dir", type=Path)
+    parser.add_argument(
+        "--distance_threshold",
+        type=float,
+        default=10.0,
+        help="Max distance threshold for merging rectangles",
+    )
+    parser.add_argument(
+        "--angle_threshold",
+        type=float,
+        default=5.0,
+        help="Max angle threshold for merging rectangles",
+    )
+    parser.add_argument(
+        "--debug_display",
+        action="store_true",
+        help="Display an image with detected text areas for debugging purposes.",
+    )
     args = parser.parse_args(namespace=Arguments())
 
     # Validate arguments
@@ -38,8 +66,8 @@ def main():
 
     # Load and parse the input JSON file
     with open(args.input_path, "r") as input_file:
-        data = json.load(input_file)
-        rotated_rectangles = [
+        data: Input = json.load(input_file)
+        rectangles = [
             RotatedRect(
                 center=(dto["center"][0], dto["center"][1]),
                 size=(dto["size"][0], dto["size"][1]),
@@ -50,18 +78,11 @@ def main():
 
     # Try to consolidate the results by merging close rectangles of similar angles
     print_banner("Consolidating results")
-    DISTANCE_THRESHOLD = 10
-    groups: list[list[RotatedRect]] = []
-    for rect in rotated_rectangles:
-        found_group = False
-        for group in groups:
-            # Check if the rectangle is close enough to any rectangle in the group
-            if any(distance_function(rect, r) < DISTANCE_THRESHOLD for r in group):  # type: ignore
-                group.append(rect)  # type: ignore
-                found_group = True
-                break
-        if not found_group:
-            groups.append([rect])  # type: ignore
+    groups = group_rectangles(
+        rectangles=rectangles,
+        distance_threshold=args.distance_threshold,
+        angle_threshold=args.angle_threshold,
+    )
 
     # Merge groups of rectangle to a single rectangle
     print_banner("Merging groups of rectangles")
@@ -71,65 +92,94 @@ def main():
 
     # Save the consolidated rectangles to the output directory
     print_banner("Saving results")
-    for i, rect in enumerate(merged_groups):
-
-        # Build the output structure
-        output = Output(
-            source_image_path=str(args.image_path),
-            rectangle=RotatedRectangleDto(
+    output = Output(
+        source_image_path=str(data["source_image_path"]),
+        rectangles=[
+            RotatedRectangleDto(
                 center=rect.center,  # type: ignore
                 size=rect.size,  # type: ignore
                 angle=rect.angle,
-            ),
-        )
+            )
+            for rect in merged_groups
+        ],
+    )
+    output_file_path = args.output_dir / f"{args.input_path.stem}.json"
+    with open(output_file_path, "w") as output_file:
+        json.dump(output, output_file, indent=4, sort_keys=True)
 
-        # Save the output as a JSON file
-        output_file_path = args.output_dir / f"{args.input_path.stem}_group_{i}.json"
-        with open(output_file_path, "w") as output_file:
-            json.dump(output, output_file, indent=4, sort_keys=True)
+    # If debug display is enabled, show the image with detected text areas
+    if args.debug_display:
+        print_banner("Displaying grouped text areas")
+        display_image_with_rects(data["source_image_path"], merged_groups)  # type: ignore
 
 
-def distance_function(
+def group_rectangles(
+    rectangles: list[RotatedRect],
+    distance_threshold: float,
+    angle_threshold: float,
+) -> list[list[RotatedRect]]:
+    """Groups rotated rectangles based on spatial proximity and angle similarity."""
+
+    rect_count: int = len(rectangles)
+    visited: list[bool] = [False] * rect_count
+    groups = list[list[RotatedRect]]()
+
+    for i in range(rect_count):
+        if visited[i]:
+            continue
+
+        group: list[int] = [i]
+        queue: list[int] = [i]
+        visited[i] = True
+
+        while queue:
+            current: int = queue.pop()
+            for j in range(rect_count):
+                if visited[j]:
+                    continue
+                if is_similar(
+                    rect1=rectangles[current],
+                    rect2=rectangles[j],
+                    angle_threshold=angle_threshold,
+                    distance_threshold=distance_threshold,
+                ):
+                    visited[j] = True
+                    queue.append(j)
+                    group.append(j)
+
+        grouped_rects: list[RotatedRect] = [rectangles[i] for i in group]
+        groups.append(grouped_rects)
+
+    return groups
+
+
+def is_similar(
     rect1: RotatedRect,
     rect2: RotatedRect,
-):
+    angle_threshold: float,
+    distance_threshold: float,
+) -> bool:
     """
-    Compute the clustering distance between two rectangles.
-    The base distance is the smallest pixel distance between edges.
-    Similar angles keep the pixel as is, while different angles make the distance skyrocket, no matter the pixel distance.
+    Check if two rectangles are similar based on their distances and angles.
     """
 
     # Get the closest point pair
-    rect1_min_point = rect1.center
-    rect2_min_point = rect2.center
     min_distance = float("inf")
     for p1 in rect1.points():
         for p2 in rect2.points():
             d = distance(p1, p2)  # type: ignore
             if d < min_distance:
                 min_distance = d
-                rect1_min_point = p1
-                rect2_min_point = p2
 
     # Normalize angles to be in the range [-180, 180)
     rect1.angle = normalize_angle(rect1.angle)
     rect2.angle = normalize_angle(rect2.angle)
 
-    # Make x,y,angle a 3D vector
-    ANGLE_BIAS = 2  # 5° should be about the same as 10px distance
-    rect1_vector = (
-        rect1_min_point[0],
-        rect1_min_point[1],
-        rect1.angle / 180 * ANGLE_BIAS,
+    # check if the distance is small enough and the angles are similar
+    return (
+        min_distance < distance_threshold
+        and abs(rect1.angle - rect2.angle) < angle_threshold
     )
-    rect2_vector = (
-        rect2_min_point[0],
-        rect2_min_point[1],
-        rect2.angle / 180 * ANGLE_BIAS,
-    )
-
-    # Compute the distance between the two vectors
-    return distance(rect1_vector, rect2_vector)
 
 
 def normalize_angle(angle: float) -> float:

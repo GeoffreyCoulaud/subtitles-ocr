@@ -5,6 +5,7 @@ from typing import TypedDict
 
 import cv2
 
+from src.main.lib.display_image_with_rects import display_image_with_rects
 from src.main.lib.print_banner import print_banner
 from src.main.lib.rotated_rectangle import RotatedRectangleDto
 
@@ -13,6 +14,8 @@ class Arguments(Namespace):
     image_path: Path
     output_dir: Path
     dbnet_model_path: Path
+    dbnet_confidence_threshold: float
+    debug_display: bool
 
 
 class Output(TypedDict):
@@ -24,7 +27,7 @@ def main():
 
     # Parse command line arguments
     parser = ArgumentParser(
-        description="Extract frames from a video file and rename them with frame number and timestamp."
+        description="Extract text areas from an image using a pre-trained DBnet model."
     )
     parser.add_argument("image_path", type=Path)
     parser.add_argument("output_dir", type=Path)
@@ -32,6 +35,17 @@ def main():
         "dbnet_model_path",
         type=Path,
         help="Path to the pre-trained DBnet model file.",
+    )
+    parser.add_argument(
+        "--dbnet_confidence_threshold",
+        type=float,
+        default=0.8,
+        help="Confidence threshold for filtering detected text areas.",
+    )
+    parser.add_argument(
+        "--debug_display",
+        action="store_true",
+        help="Display an image with detected text areas for debugging purposes.",
     )
     args = parser.parse_args(namespace=Arguments())
 
@@ -56,9 +70,10 @@ def main():
 
     # Remove results with low confidence
     print_banner("Pruning results by confidence")
-    CONFIDENCE_THRESHOLD = 0.8
     pruned_results = [
-        rect for rect, confidence in results if confidence >= CONFIDENCE_THRESHOLD
+        rect
+        for rect, confidence in results
+        if confidence >= args.dbnet_confidence_threshold
     ]
 
     # Output the results
@@ -77,6 +92,11 @@ def main():
     output_file_path = args.output_dir / args.image_path.with_suffix(".json").name
     with open(output_file_path, "w") as output_file:
         json.dump(output, output_file, indent=4, sort_keys=True)
+
+    # If debug display is enabled, show the image with detected text areas
+    if args.debug_display:
+        print_banner("Displaying detected text areas")
+        display_image_with_rects(args.image_path, pruned_results)  # type: ignore
 
 
 if __name__ == "__main__":
