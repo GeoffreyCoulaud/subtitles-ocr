@@ -1,0 +1,82 @@
+import json
+from pathlib import Path
+
+import click
+
+from subtitles_ocr.models import FrameAnalysis
+from subtitles_ocr.pipeline.extract import extract_frames
+from subtitles_ocr.pipeline.filter import compute_groups
+from subtitles_ocr.pipeline.analyze import analyze_group
+from subtitles_ocr.pipeline.group import group_events
+from subtitles_ocr.pipeline.serialize import build_ass_content
+from subtitles_ocr.vlm.client import OllamaClient
+from subtitles_ocr.vlm.prompt import SYSTEM_PROMPT
+
+
+@click.command()
+@click.argument("video", type=click.Path(exists=True, path_type=Path))
+@click.option("--output", "-o", type=click.Path(path_type=Path), default=None,
+              help="Chemin du fichier .ass de sortie (défaut: <video>.ass)")
+@click.option("--workdir", "-w", type=click.Path(path_type=Path), default=None,
+              help="Dossier de travail pour les fichiers intermédiaires")
+@click.option("--model", "-m", default="qwen2-vl:7b",
+              help="Modèle Ollama à utiliser (défaut: qwen2-vl:7b)")
+def cli(video: Path, output: Path | None, workdir: Path | None, model: str) -> None:
+    """Extrait les sous-titres incrustés d'une vidéo anime et produit un fichier .ass."""
+    if output is None:
+        output = video.with_suffix(".ass")
+    if workdir is None:
+        workdir = video.parent / (video.stem + "_subtitles_ocr")
+
+    workdir.mkdir(parents=True, exist_ok=True)
+    frames_dir = workdir / "frames"
+    manifest_path = workdir / "manifest.json"
+    video_info_path = workdir / "video_info.json"
+    groups_path = workdir / "groups.jsonl"
+    analysis_path = workdir / "analysis.jsonl"
+    events_path = workdir / "events.json"
+
+    # Étape 1 : extraction
+    click.echo(f"[1/5] Extraction des frames vers {frames_dir}...")
+    frames, video_info = extract_frames(video, frames_dir)
+    manifest_path.write_text(
+        json.dumps([json.loads(f.model_dump_json()) for f in frames], indent=2)
+    )
+    video_info_path.write_text(video_info.model_dump_json(indent=2))
+    click.echo(f"      {len(frames)} frames extraites.")
+
+    # Étape 2 : filtrage
+    click.echo("[2/5] Groupement des frames similaires (pHash)...")
+    groups = compute_groups(frames)
+    with groups_path.open("w") as f:
+        for g in groups:
+            f.write(g.model_dump_json() + "\n")
+    click.echo(f"      {len(groups)} groupes trouvés.")
+
+    # Étape 3 : analyse VLM
+    click.echo(f"[3/5] Analyse VLM ({model}) — {len(groups)} frames à analyser...")
+    client = OllamaClient(model=model)
+    analyses: list[FrameAnalysis] = []
+    with analysis_path.open("w") as f:
+        for i, group in enumerate(groups, 1):
+            click.echo(f"      [{i}/{len(groups)}] {group.frame.name}...", nl=False)
+            analysis = analyze_group(group, client, SYSTEM_PROMPT)
+            f.write(analysis.model_dump_json() + "\n")
+            analyses.append(analysis)
+            n = len(analysis.elements)
+            click.echo(f" {n} élément(s)")
+
+    # Étape 4 : groupement temporel
+    click.echo("[4/5] Groupement temporel des événements...")
+    events = group_events(analyses)
+    events_path.write_text(
+        json.dumps([json.loads(e.model_dump_json()) for e in events], indent=2)
+    )
+    click.echo(f"      {len(events)} événements.")
+
+    # Étape 5 : sérialisation
+    click.echo(f"[5/5] Écriture du fichier .ass → {output}")
+    ass_content = build_ass_content(events, video_info)
+    output.write_text(ass_content, encoding="utf-8")
+
+    click.echo(f"\nTerminé. Fichiers intermédiaires dans : {workdir}")
