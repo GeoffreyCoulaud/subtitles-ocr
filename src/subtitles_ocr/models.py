@@ -13,7 +13,7 @@ class Frame(BaseModel):
 class VideoInfo(BaseModel):
     width: int
     height: int
-    fps: float
+    fps: float = Field(gt=0.0)
 
 
 class FrameGroup(BaseModel):
