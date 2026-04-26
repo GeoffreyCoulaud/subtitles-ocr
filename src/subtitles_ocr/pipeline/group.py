@@ -18,6 +18,7 @@ def group_events(analyses: list[FrameAnalysis]) -> list[SubtitleEvent]:
 
         key = _elements_key(analysis)
         if current is not None and key == current_key:
+            # current aliases events[-1] — extending the event in-place
             current.end_time = analysis.end_time
         else:
             current = SubtitleEvent(

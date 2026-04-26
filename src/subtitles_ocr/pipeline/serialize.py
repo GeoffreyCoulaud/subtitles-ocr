@@ -28,6 +28,7 @@ def format_timestamp(seconds: float) -> str:
 
 
 def rgb_to_ass_color(hex_color: str) -> str:
+    hex_color = hex_color.upper()
     r = hex_color[1:3]
     g = hex_color[3:5]
     b = hex_color[5:7]

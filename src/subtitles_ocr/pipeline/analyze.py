@@ -7,7 +7,7 @@ def parse_elements(raw: str) -> list[SubtitleElement]:
     try:
         data = json.loads(raw)
         return [SubtitleElement.model_validate(item) for item in data]
-    except Exception:
+    except (json.JSONDecodeError, ValueError):
         return []
 
 
