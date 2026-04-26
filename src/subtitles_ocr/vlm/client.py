@@ -7,13 +7,19 @@ class OllamaClient:
         self.model = model
 
     def analyze(self, image_path: Path, prompt: str) -> str:
-        image_data = image_path.read_bytes()
-        response = ollama.chat(
-            model=self.model,
-            messages=[{
-                "role": "user",
-                "content": prompt,
-                "images": [image_data],
-            }],
-        )
+        try:
+            image_data = image_path.read_bytes()
+        except OSError as e:
+            raise RuntimeError(f"Cannot read image {image_path}: {e}") from e
+        try:
+            response = ollama.chat(
+                model=self.model,
+                messages=[{
+                    "role": "user",
+                    "content": prompt,
+                    "images": [image_data],
+                }],
+            )
+        except Exception as e:
+            raise RuntimeError(f"Ollama VLM call failed ({self.model}): {e}") from e
         return response["message"]["content"]
