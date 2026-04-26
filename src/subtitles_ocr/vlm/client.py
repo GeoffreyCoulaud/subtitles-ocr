@@ -22,4 +22,4 @@ class OllamaClient:
             )
         except Exception as e:
             raise RuntimeError(f"Ollama VLM call failed ({self.model}): {e}") from e
-        return response["message"]["content"]
+        return response.message.content

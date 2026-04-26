@@ -4,7 +4,8 @@ from subtitles_ocr.vlm.client import OllamaClient
 
 
 def test_analyze_passes_image_and_prompt():
-    mock_response = {"message": {"content": '[]'}}
+    mock_response = MagicMock()
+    mock_response.message.content = '[]'
     with patch("subtitles_ocr.vlm.client.ollama.chat", return_value=mock_response) as mock_chat:
         with patch.object(Path, "read_bytes", return_value=b"image_data"):
             client = OllamaClient(model="test-model")
@@ -19,7 +20,8 @@ def test_analyze_passes_image_and_prompt():
 
 
 def test_analyze_returns_raw_string():
-    mock_response = {"message": {"content": '[{"text": "Bonjour"}]'}}
+    mock_response = MagicMock()
+    mock_response.message.content = '[{"text": "Bonjour"}]'
     with patch("subtitles_ocr.vlm.client.ollama.chat", return_value=mock_response):
         with patch.object(Path, "read_bytes", return_value=b"image_data"):
             client = OllamaClient(model="test-model")
