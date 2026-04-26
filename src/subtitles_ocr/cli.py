@@ -40,7 +40,7 @@ def cli(video: Path, output: Path | None, workdir: Path | None, model: str) -> N
     click.echo(f"[1/5] Extraction des frames vers {frames_dir}...")
     frames, video_info = extract_frames(video, frames_dir)
     manifest_path.write_text(
-        json.dumps([json.loads(f.model_dump_json()) for f in frames], indent=2)
+        json.dumps([f.model_dump(mode="json") for f in frames], indent=2)
     )
     video_info_path.write_text(video_info.model_dump_json(indent=2))
     click.echo(f"      {len(frames)} frames extraites.")
@@ -60,17 +60,26 @@ def cli(video: Path, output: Path | None, workdir: Path | None, model: str) -> N
     with analysis_path.open("w") as f:
         for i, group in enumerate(groups, 1):
             click.echo(f"      [{i}/{len(groups)}] {group.frame.name}...", nl=False)
-            analysis = analyze_group(group, client, SYSTEM_PROMPT)
-            f.write(analysis.model_dump_json() + "\n")
-            analyses.append(analysis)
-            n = len(analysis.elements)
-            click.echo(f" {n} élément(s)")
+            try:
+                analysis = analyze_group(group, client, SYSTEM_PROMPT)
+                f.write(analysis.model_dump_json() + "\n")
+                analyses.append(analysis)
+                click.echo(f" {len(analysis.elements)} élément(s)")
+            except RuntimeError as e:
+                click.echo(f" ERREUR: {e}", err=True)
+                fallback = FrameAnalysis(
+                    start_time=group.start_time,
+                    end_time=group.end_time,
+                    elements=[],
+                )
+                f.write(fallback.model_dump_json() + "\n")
+                analyses.append(fallback)
 
     # Étape 4 : groupement temporel
     click.echo("[4/5] Groupement temporel des événements...")
     events = group_events(analyses)
     events_path.write_text(
-        json.dumps([json.loads(e.model_dump_json()) for e in events], indent=2)
+        json.dumps([e.model_dump(mode="json") for e in events], indent=2)
     )
     click.echo(f"      {len(events)} événements.")
 
