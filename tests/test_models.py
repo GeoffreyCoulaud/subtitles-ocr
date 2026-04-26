@@ -63,3 +63,12 @@ def test_subtitle_event_roundtrip():
     data = json.loads(event.model_dump_json())
     restored = SubtitleEvent.model_validate(data)
     assert restored.elements[0].text == "Test"
+
+
+def test_video_info_roundtrip():
+    info = VideoInfo(width=1920, height=1080, fps=23.976)
+    data = json.loads(info.model_dump_json())
+    restored = VideoInfo.model_validate(data)
+    assert restored.width == 1920
+    assert restored.height == 1080
+    assert abs(restored.fps - 23.976) < 1e-6
