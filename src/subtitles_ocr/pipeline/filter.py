@@ -7,7 +7,8 @@ HASH_DISTANCE_THRESHOLD = 10
 
 
 def compute_hash(frame_path: Path) -> imagehash.ImageHash:
-    return imagehash.phash(Image.open(frame_path))
+    with Image.open(frame_path) as img:
+        return imagehash.phash(img)
 
 
 def compute_groups(
