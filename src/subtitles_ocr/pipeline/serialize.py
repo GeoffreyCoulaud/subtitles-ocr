@@ -1,0 +1,77 @@
+from subtitles_ocr.models import SubtitleElement, SubtitleEvent, VideoInfo
+
+_ASS_HEADER = """\
+[Script Info]
+ScriptType: v4.00+
+PlayResX: {width}
+PlayResY: {height}
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+
+def format_timestamp(seconds: float) -> str:
+    cs = round(seconds * 100)
+    h = cs // 360000
+    cs %= 360000
+    m = cs // 6000
+    cs %= 6000
+    s = cs // 100
+    cs %= 100
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+
+def rgb_to_ass_color(hex_color: str) -> str:
+    r = hex_color[1:3]
+    g = hex_color[3:5]
+    b = hex_color[5:7]
+    return f"&H{b}{g}{r}&"
+
+
+def element_to_ass_tags(element: SubtitleElement, video_info: VideoInfo) -> str:
+    x = round(element.position_x * video_info.width)
+    y = round(element.position_y * video_info.height)
+    font_size = round(element.font_size_relative * video_info.height)
+
+    tags = [
+        f"\\pos({x},{y})",
+        f"\\fs{font_size}",
+        f"\\c{rgb_to_ass_color(element.color)}",
+        f"\\3c{rgb_to_ass_color(element.outline_color)}",
+    ]
+    if element.bold:
+        tags.append("\\b1")
+    if element.italic:
+        tags.append("\\i1")
+    if element.rotation != 0.0:
+        tags.append(f"\\frz{element.rotation:.2f}")
+    if element.shear_x != 0.0:
+        tags.append(f"\\fax{element.shear_x:.4f}")
+    if element.shear_y != 0.0:
+        tags.append(f"\\fay{element.shear_y:.4f}")
+
+    return "{" + "".join(tags) + "}"
+
+
+def event_to_dialogue_lines(event: SubtitleEvent, video_info: VideoInfo) -> list[str]:
+    start = format_timestamp(event.start_time)
+    end = format_timestamp(event.end_time)
+    lines = []
+    for element in event.elements:
+        tags = element_to_ass_tags(element, video_info)
+        lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{tags}{element.text}")
+    return lines
+
+
+def build_ass_content(events: list[SubtitleEvent], video_info: VideoInfo) -> str:
+    header = _ASS_HEADER.format(width=video_info.width, height=video_info.height)
+    dialogue_lines = []
+    for event in events:
+        dialogue_lines.extend(event_to_dialogue_lines(event, video_info))
+    return header + "\n".join(dialogue_lines) + ("\n" if dialogue_lines else "")
