@@ -1,7 +1,28 @@
 [project]
 name = "subtitles-ocr"
 version = "0.1.0"
-description = "Add your description here"
+description = "Hardcoded subtitle extractor for anime — outputs .ass files"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "Pillow>=11.0",
+    "imagehash>=4.3",
+    "pydantic>=2.0",
+    "ollama>=0.4",
+    "click>=8.0",
+]
+
+[project.scripts]
+subtitles-ocr = "subtitles_ocr.cli:cli"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
