@@ -48,6 +48,14 @@ def test_parse_elements_multiple():
     assert elements[1].text == "Au revoir"
 
 
+def test_parse_elements_partial_invalid_keeps_valid():
+    invalid_element = {"text": "Bad", "position_x": "not-a-float"}
+    raw = json.dumps([VALID_ELEMENT, invalid_element])
+    elements = parse_elements(raw)
+    assert len(elements) == 1
+    assert elements[0].text == "Bonjour"
+
+
 def test_analyze_group_returns_correct_timing():
     client = MagicMock()
     client.analyze.return_value = "[]"

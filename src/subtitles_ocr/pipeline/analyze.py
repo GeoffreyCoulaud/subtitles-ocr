@@ -6,9 +6,15 @@ from subtitles_ocr.vlm.client import OllamaClient
 def parse_elements(raw: str) -> list[SubtitleElement]:
     try:
         data = json.loads(raw)
-        return [SubtitleElement.model_validate(item) for item in data]
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return []
+    result = []
+    for item in data:
+        try:
+            result.append(SubtitleElement.model_validate(item))
+        except ValueError:
+            pass
+    return result
 
 
 def analyze_group(

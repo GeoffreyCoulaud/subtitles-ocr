@@ -40,15 +40,16 @@ def cli(video: Path, output: Path | None, workdir: Path | None, model: str) -> N
     click.echo(f"[1/5] Extraction des frames vers {frames_dir}...")
     frames, video_info = extract_frames(video, frames_dir)
     manifest_path.write_text(
-        json.dumps([f.model_dump(mode="json") for f in frames], indent=2)
+        json.dumps([f.model_dump(mode="json") for f in frames], indent=2),
+        encoding="utf-8",
     )
-    video_info_path.write_text(video_info.model_dump_json(indent=2))
+    video_info_path.write_text(video_info.model_dump_json(indent=2), encoding="utf-8")
     click.echo(f"      {len(frames)} frames extraites.")
 
     # Étape 2 : filtrage
     click.echo("[2/5] Groupement des frames similaires (pHash)...")
     groups = compute_groups(frames)
-    with groups_path.open("w") as f:
+    with groups_path.open("w", encoding="utf-8") as f:
         for g in groups:
             f.write(g.model_dump_json() + "\n")
     click.echo(f"      {len(groups)} groupes trouvés.")
@@ -57,7 +58,7 @@ def cli(video: Path, output: Path | None, workdir: Path | None, model: str) -> N
     click.echo(f"[3/5] Analyse VLM ({model}) — {len(groups)} frames à analyser...")
     client = OllamaClient(model=model)
     analyses: list[FrameAnalysis] = []
-    with analysis_path.open("w") as f:
+    with analysis_path.open("w", encoding="utf-8") as f:
         for i, group in enumerate(groups, 1):
             click.echo(f"      [{i}/{len(groups)}] {group.frame.name}...", nl=False)
             try:
@@ -79,7 +80,8 @@ def cli(video: Path, output: Path | None, workdir: Path | None, model: str) -> N
     click.echo("[4/5] Groupement temporel des événements...")
     events = group_events(analyses)
     events_path.write_text(
-        json.dumps([e.model_dump(mode="json") for e in events], indent=2)
+        json.dumps([e.model_dump(mode="json") for e in events], indent=2),
+        encoding="utf-8",
     )
     click.echo(f"      {len(events)} événements.")
 

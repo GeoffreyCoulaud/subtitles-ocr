@@ -38,7 +38,10 @@ def get_video_info(video_path: Path) -> VideoInfo:
         )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffprobe failed for {video_path}: {e.stderr or '(no stderr)'}") from e
-    return parse_video_info(result.stdout)
+    try:
+        return parse_video_info(result.stdout)
+    except ValueError as e:
+        raise RuntimeError(f"Cannot parse video info for {video_path}: {e}") from e
 
 
 def extract_frames(video_path: Path, output_dir: Path) -> tuple[list[Frame], VideoInfo]:
@@ -58,7 +61,8 @@ def extract_frames(video_path: Path, output_dir: Path) -> tuple[list[Frame], Vid
             capture_output=True, check=True,
         )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffmpeg failed for {video_path}") from e
+        stderr = e.stderr.decode(errors="replace") if e.stderr else "(no stderr)"
+        raise RuntimeError(f"ffmpeg failed for {video_path}: {stderr}") from e
 
     paths = sorted(output_dir.glob("*.jpg"))
     if not paths:
