@@ -43,7 +43,7 @@ def test_extract_skipped_when_manifest_exists(tmp_path):
 
     with patch("subtitles_ocr.cli.extract_frames") as mock_extract, \
          patch("subtitles_ocr.cli.compute_groups", return_value=[]), \
-         patch("subtitles_ocr.cli.prefilter_groups", return_value=[]), \
+         patch("subtitles_ocr.cli.analyze_group"), \
          patch("subtitles_ocr.cli.build_ass_content", return_value=""):
         runner = CliRunner()
         runner.invoke(cli, [
@@ -52,3 +52,21 @@ def test_extract_skipped_when_manifest_exists(tmp_path):
         ])
 
     mock_extract.assert_not_called()
+
+
+def test_phash_skipped_when_groups_exist(tmp_path):
+    video, workdir = _minimal_workdir(tmp_path)
+    fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
+    (workdir / "groups.jsonl").write_text(json.dumps(fake_group) + "\n", encoding="utf-8")
+
+    with patch("subtitles_ocr.cli.extract_frames"), \
+         patch("subtitles_ocr.cli.compute_groups") as mock_compute, \
+         patch("subtitles_ocr.cli.analyze_group"), \
+         patch("subtitles_ocr.cli.build_ass_content", return_value=""):
+        runner = CliRunner()
+        runner.invoke(cli, [
+            str(video), "--workdir", str(workdir),
+            "--output", str(tmp_path / "out.ass"),
+        ])
+
+    mock_compute.assert_not_called()
