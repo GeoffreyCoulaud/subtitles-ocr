@@ -3,7 +3,7 @@ from pathlib import Path
 
 import click
 
-from subtitles_ocr.models import FrameAnalysis
+from subtitles_ocr.models import Frame, FrameAnalysis, FrameGroup, VideoInfo
 from subtitles_ocr.pipeline.extract import extract_frames
 from subtitles_ocr.pipeline.filter import compute_groups
 from subtitles_ocr.pipeline.analyze import analyze_group
@@ -13,14 +13,20 @@ from subtitles_ocr.vlm.client import OllamaClient
 from subtitles_ocr.vlm.prompt import SYSTEM_PROMPT
 
 
+def _read_jsonl(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    return [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
 @click.command()
 @click.argument("video", type=click.Path(exists=True, path_type=Path))
 @click.option("--output", "-o", type=click.Path(path_type=Path), default=None,
               help="Chemin du fichier .ass de sortie (défaut: <video>.ass)")
 @click.option("--workdir", "-w", type=click.Path(path_type=Path), default=None,
               help="Dossier de travail pour les fichiers intermédiaires")
-@click.option("--model", "-m", default="qwen2-vl:7b",
-              help="Modèle Ollama à utiliser (défaut: qwen2-vl:7b)")
+@click.option("--model", "-m", default="qwen3-vl:8b",
+              help="Modèle Ollama à utiliser (défaut: qwen3-vl:8b)")
 def cli(video: Path, output: Path | None, workdir: Path | None, model: str) -> None:
     """Extrait les sous-titres incrustés d'une vidéo anime et produit un fichier .ass."""
     if output is None:
@@ -37,22 +43,31 @@ def cli(video: Path, output: Path | None, workdir: Path | None, model: str) -> N
     events_path = workdir / "events.json"
 
     # Étape 1 : extraction
-    click.echo(f"[1/5] Extraction des frames vers {frames_dir}...")
-    frames, video_info = extract_frames(video, frames_dir)
-    manifest_path.write_text(
-        json.dumps([f.model_dump(mode="json") for f in frames], indent=2),
-        encoding="utf-8",
-    )
-    video_info_path.write_text(video_info.model_dump_json(indent=2), encoding="utf-8")
-    click.echo(f"      {len(frames)} frames extraites.")
+    if manifest_path.exists() and video_info_path.exists():
+        click.echo("[1/5] Extraction ignorée (reprise).")
+        frames = [Frame.model_validate(f) for f in json.loads(manifest_path.read_text(encoding="utf-8"))]
+        video_info = VideoInfo.model_validate_json(video_info_path.read_text(encoding="utf-8"))
+    else:
+        click.echo(f"[1/5] Extraction des frames vers {frames_dir}...")
+        frames, video_info = extract_frames(video, frames_dir)
+        manifest_path.write_text(
+            json.dumps([f.model_dump(mode="json") for f in frames], indent=2),
+            encoding="utf-8",
+        )
+        video_info_path.write_text(video_info.model_dump_json(indent=2), encoding="utf-8")
+        click.echo(f"      {len(frames)} frames extraites.")
 
     # Étape 2 : filtrage
-    click.echo("[2/5] Groupement des frames similaires (pHash)...")
-    groups = compute_groups(frames)
-    with groups_path.open("w", encoding="utf-8") as f:
-        for g in groups:
-            f.write(g.model_dump_json() + "\n")
-    click.echo(f"      {len(groups)} groupes trouvés.")
+    if groups_path.exists():
+        click.echo("[2/5] Groupement ignoré (reprise).")
+        groups = [FrameGroup.model_validate_json(line) for line in _read_jsonl(groups_path)]
+    else:
+        click.echo("[2/5] Groupement des frames similaires (pHash)...")
+        groups = compute_groups(frames)
+        with groups_path.open("w", encoding="utf-8") as f:
+            for g in groups:
+                f.write(g.model_dump_json() + "\n")
+        click.echo(f"      {len(groups)} groupes trouvés.")
 
     # Étape 3 : analyse VLM
     click.echo(f"[3/5] Analyse VLM ({model}) — {len(groups)} frames à analyser...")
