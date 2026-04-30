@@ -61,6 +61,7 @@ def test_phash_skipped_when_groups_exist(tmp_path):
 
     with patch("subtitles_ocr.cli.extract_frames"), \
          patch("subtitles_ocr.cli.compute_groups") as mock_compute, \
+         patch("subtitles_ocr.cli.prefilter_groups", return_value=[False]), \
          patch("subtitles_ocr.cli.analyze_group"), \
          patch("subtitles_ocr.cli.build_ass_content", return_value=""):
         runner = CliRunner()

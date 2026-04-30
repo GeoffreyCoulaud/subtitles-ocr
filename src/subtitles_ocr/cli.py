@@ -103,6 +103,10 @@ def cli(
         click.echo("[3/6] Pré-filtrage ignoré (reprise).")
 
     # Étape 4 : analyse VLM
+    assert len(filter_results) == len(groups), (
+        f"filter.jsonl a {len(filter_results)} entrées mais groups.jsonl en a "
+        f"{len(groups)} — supprimez filter.jsonl pour relancer le pré-filtrage."
+    )
     click.echo(f"[4/6] Analyse VLM ({model}) — {len(groups)} groupes à traiter...")
     client = OllamaClient(model=model)
     analyses: list[FrameAnalysis] = []
