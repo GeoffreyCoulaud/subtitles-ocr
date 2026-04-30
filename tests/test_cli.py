@@ -70,3 +70,28 @@ def test_phash_skipped_when_groups_exist(tmp_path):
         ])
 
     mock_compute.assert_not_called()
+
+
+def test_prefilter_is_called_with_all_groups(tmp_path):
+    video, workdir = _minimal_workdir(tmp_path)
+    # groups.jsonl avec 2 groupes
+    fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
+    (workdir / "groups.jsonl").write_text(
+        json.dumps(fake_group) + "\n" + json.dumps(fake_group) + "\n",
+        encoding="utf-8",
+    )
+
+    with patch("subtitles_ocr.cli.extract_frames"), \
+         patch("subtitles_ocr.cli.compute_groups"), \
+         patch("subtitles_ocr.cli.prefilter_groups", return_value=[False, False]) as mock_pf, \
+         patch("subtitles_ocr.cli.analyze_group") as mock_analyze, \
+         patch("subtitles_ocr.cli.build_ass_content", return_value=""):
+        runner = CliRunner()
+        runner.invoke(cli, [
+            str(video), "--workdir", str(workdir),
+            "--output", str(tmp_path / "out.ass"),
+        ])
+
+    mock_pf.assert_called_once()
+    # analyze_group ne doit pas être appelé si tous les groupes sont filtrés
+    mock_analyze.assert_not_called()
