@@ -1,5 +1,6 @@
 import imagehash
 from pathlib import Path
+from typing import Iterable
 from PIL import Image
 from subtitles_ocr.models import Frame, FrameGroup
 
@@ -12,18 +13,20 @@ def compute_hash(frame_path: Path) -> imagehash.ImageHash:
 
 
 def compute_groups(
-    frames: list[Frame],
+    frames: Iterable[Frame],
     threshold: int = HASH_DISTANCE_THRESHOLD,
 ) -> list[FrameGroup]:
-    if not frames:
+    frames_iter = iter(frames)
+    first = next(frames_iter, None)
+    if first is None:
         return []
 
     groups: list[FrameGroup] = []
-    group_start = frames[0]
-    group_end = frames[0]
-    group_hash = compute_hash(frames[0].path)
+    group_start = first
+    group_end = first
+    group_hash = compute_hash(first.path)
 
-    for frame in frames[1:]:
+    for frame in frames_iter:
         frame_hash = compute_hash(frame.path)
         if frame_hash - group_hash <= threshold:
             group_end = frame
