@@ -91,7 +91,7 @@ def cli(
     if remaining_for_filter:
         click.echo(f"[3/6] Pré-filtrage ({filter_model}) — {len(remaining_for_filter)} groupes restants...")
         filter_client = OllamaClient(model=filter_model)
-        new_results = prefilter_groups(remaining_for_filter, filter_client, PREFILTER_PROMPT, filter_workers)
+        new_results = list(prefilter_groups(remaining_for_filter, filter_client, PREFILTER_PROMPT, filter_workers))
         mode = "a" if n_filter_done > 0 else "w"
         with filter_path.open(mode, encoding="utf-8") as f:
             for group, has_text in zip(remaining_for_filter, new_results):
