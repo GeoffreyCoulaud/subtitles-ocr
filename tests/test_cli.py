@@ -138,3 +138,63 @@ def test_analyze_resumes_from_existing_analysis(tmp_path):
 
     # Seul le 3e groupe doit être analysé
     assert mock_analyze.call_count == 1
+
+
+def test_prefilter_writes_results_incrementally(tmp_path):
+    """Results are flushed to filter.jsonl as they arrive, so a crash mid-run preserves progress."""
+    video, workdir = _minimal_workdir(tmp_path)
+
+    fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
+    (workdir / "groups.jsonl").write_text(
+        "\n".join([json.dumps(fake_group)] * 3) + "\n", encoding="utf-8"
+    )
+
+    def partial_prefilter(groups, client, prompt, workers):
+        yield False
+        yield True
+        raise RuntimeError("simulated crash")
+
+    with patch("subtitles_ocr.cli.extract_frames"), \
+         patch("subtitles_ocr.cli.compute_groups"), \
+         patch("subtitles_ocr.cli.prefilter_groups", side_effect=partial_prefilter), \
+         patch("subtitles_ocr.cli.analyze_group"), \
+         patch("subtitles_ocr.cli.build_ass_content", return_value=""):
+        runner = CliRunner()
+        runner.invoke(cli, [
+            str(video), "--workdir", str(workdir),
+            "--output", str(tmp_path / "out.ass"),
+        ])
+
+    # The 2 results yielded before the crash must be persisted
+    filter_lines = _read_jsonl(workdir / "filter.jsonl")
+    assert len(filter_lines) == 2
+
+
+def test_prefilter_writes_results_incrementally(tmp_path):
+    """Results are flushed to filter.jsonl as they arrive, so a crash mid-run preserves progress."""
+    video, workdir = _minimal_workdir(tmp_path)
+
+    fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
+    (workdir / "groups.jsonl").write_text(
+        "\n".join([json.dumps(fake_group)] * 3) + "\n", encoding="utf-8"
+    )
+
+    def partial_prefilter(groups, client, prompt, workers):
+        yield False
+        yield True
+        raise RuntimeError("simulated crash")
+
+    with patch("subtitles_ocr.cli.extract_frames"), \
+         patch("subtitles_ocr.cli.compute_groups"), \
+         patch("subtitles_ocr.cli.prefilter_groups", side_effect=partial_prefilter), \
+         patch("subtitles_ocr.cli.analyze_group"), \
+         patch("subtitles_ocr.cli.build_ass_content", return_value=""):
+        runner = CliRunner()
+        runner.invoke(cli, [
+            str(video), "--workdir", str(workdir),
+            "--output", str(tmp_path / "out.ass"),
+        ])
+
+    # The 2 results yielded before the crash must be persisted
+    filter_lines = _read_jsonl(workdir / "filter.jsonl")
+    assert len(filter_lines) == 2

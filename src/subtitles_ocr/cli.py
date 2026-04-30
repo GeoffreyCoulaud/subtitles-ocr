@@ -113,17 +113,19 @@ def cli(
 
     if remaining_for_filter:
         filter_client = OllamaClient(model=filter_model)
-        new_results = list(tqdm(
-            prefilter_groups(remaining_for_filter, filter_client, PREFILTER_PROMPT, filter_workers),
-            total=len(remaining_for_filter),
-            desc=f"[3/6] Pré-filtrage ({filter_model})",
-            unit="groupe",
-        ))
         mode = "a" if n_filter_done > 0 else "w"
         with filter_path.open(mode, encoding="utf-8") as f:
-            for group, has_text in zip(remaining_for_filter, new_results):
+            for group, has_text in zip(
+                remaining_for_filter,
+                tqdm(
+                    prefilter_groups(remaining_for_filter, filter_client, PREFILTER_PROMPT, filter_workers),
+                    total=len(remaining_for_filter),
+                    desc=f"[3/6] Pré-filtrage ({filter_model})",
+                    unit="groupe",
+                ),
+            ):
                 f.write(json.dumps({"frame": str(group.frame), "has_text": has_text}) + "\n")
-        filter_results.extend(new_results)
+                filter_results.append(has_text)
         kept = sum(filter_results)
         click.echo(f"      {kept}/{len(groups)} groupes conservés pour l'analyse.")
     else:

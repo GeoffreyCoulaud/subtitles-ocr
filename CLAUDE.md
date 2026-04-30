@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Never use `python` or `pip` directly.** Every Python invocation goes through `uv run`. Every dependency change goes through `uv add` / `uv remove`. Every install goes through `uv sync`. No exceptions unless a specific operation has no `uv` equivalent — in that case, document why before doing it.
 - **Never edit `pyproject.toml` dependencies by hand.** Use `uv add <pkg>` and `uv remove <pkg>` so the lockfile stays consistent.
 - **`uv run python -m pytest`, never `uv run pytest`.** The system Python 3.14 shadows the venv Python 3.12 when invoking `pytest` directly.
+- **Never run a script that only prints to verify reasoning.** A `python -c` (or any script) containing only `print()` statements narrates a conclusion — it does not verify anything. Real verification means executing the code under test and asserting on its behavior. All verification belongs in `tests/` as pytest tests with `assert`. This rule applies to subagents (e.g. code-reviewer) too.
 
 ## Commands
 
