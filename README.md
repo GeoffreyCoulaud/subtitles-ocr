@@ -32,21 +32,19 @@ cd subtitles-ocr
 uv sync
 ```
 
-### Pull a VLM model
+### Pull the VLM models
 
-Any multimodal Ollama model works. Recommended options (best to lightest):
+The pipeline uses two models that never coexist in VRAM:
 
-| Model | Size | Notes |
-|-------|------|-------|
-| `qwen3-vl:8b` | ~5 GB | Best general vision model (default) |
-| `qwen2.5vl:7b` | ~5 GB | Previous generation, still very capable |
-| `deepseek-ocr:3b` | ~2 GB | Lightweight, OCR-specialized |
+- **Pre-filter** (`moondream`, 1.7 GB) — fast yes/no pass to skip frames with no text
+- **Analysis** (`qwen3-vl:8b`, 6.1 GB) — full subtitle extraction on frames that passed the pre-filter
 
 ```bash
+ollama pull moondream
 ollama pull qwen3-vl:8b
 ```
 
-Make sure Ollama is running before invoking the tool.
+Both can be overridden with `--filter-model` and `--model`. Make sure Ollama is running before invoking the tool.
 
 ## Usage
 
@@ -62,7 +60,9 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 |--------|---------|-------------|
 | `-o`, `--output` | `<video>.ass` | Path to the output `.ass` file |
 | `-w`, `--workdir` | `<video>_subtitles_ocr/` | Directory for intermediate files |
-| `-m`, `--model` | `qwen2-vl:7b` | Ollama model to use |
+| `-m`, `--model` | `qwen3-vl:8b` | Ollama model for subtitle extraction |
+| `--filter-model` | `moondream` | Ollama model for the pre-filter pass |
+| `--filter-workers` | `4` | Parallel workers for the pre-filter pass |
 
 ### Example
 
@@ -81,5 +81,5 @@ uv run subtitles-ocr episode01.mkv -o subs/episode01.ass -m llava:13b
 uv sync --extra dev
 
 # Run tests
-uv run pytest
+uv run python -m pytest
 ```
