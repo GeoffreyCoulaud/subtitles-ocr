@@ -17,32 +17,32 @@ def _group(name: str = "a") -> FrameGroup:
 def test_yes_response_returns_true():
     client = MagicMock()
     client.analyze.return_value = "yes"
-    assert prefilter_groups([_group()], client, "p", workers=1) == [True]
+    assert list(prefilter_groups([_group()], client, "p", workers=1)) == [True]
 
 
 def test_yes_case_insensitive():
     client = MagicMock()
     client.analyze.return_value = "Yes"
-    assert prefilter_groups([_group()], client, "p", workers=1) == [True]
+    assert list(prefilter_groups([_group()], client, "p", workers=1)) == [True]
 
 
 def test_no_response_returns_false():
     client = MagicMock()
     client.analyze.return_value = "no"
-    assert prefilter_groups([_group()], client, "p", workers=1) == [False]
+    assert list(prefilter_groups([_group()], client, "p", workers=1)) == [False]
 
 
 def test_ambiguous_response_returns_true_conservative():
     client = MagicMock()
     client.analyze.return_value = "I cannot determine"
-    assert prefilter_groups([_group()], client, "p", workers=1) == [True]
+    assert list(prefilter_groups([_group()], client, "p", workers=1)) == [True]
 
 
 def test_partial_errors_return_true_conservative():
     client = MagicMock()
     client.model = "smolvlm2:256m"
     client.analyze.side_effect = ["yes", RuntimeError("network error")]
-    result = prefilter_groups([_group("a"), _group("b")], client, "p", workers=1)
+    result = list(prefilter_groups([_group("a"), _group("b")], client, "p", workers=1))
     assert result == [True, True]
 
 
@@ -52,17 +52,17 @@ def test_all_errors_raises():
     client.model = "smolvlm2:256m"
     client.analyze.side_effect = RuntimeError("model not found")
     with pytest.raises(RuntimeError, match="smolvlm2:256m"):
-        prefilter_groups([_group("a"), _group("b")], client, "p", workers=1)
+        list(prefilter_groups([_group("a"), _group("b")], client, "p", workers=1))
 
 
 def test_order_preserved_with_multiple_workers():
     client = MagicMock()
     client.analyze.side_effect = ["no", "yes", "no", "yes"]
     groups = [_group("a"), _group("b"), _group("c"), _group("d")]
-    result = prefilter_groups(groups, client, "p", workers=4)
+    result = list(prefilter_groups(groups, client, "p", workers=4))
     assert result == [False, True, False, True]
 
 
 def test_empty_groups_returns_empty():
     client = MagicMock()
-    assert prefilter_groups([], client, "p", workers=4) == []
+    assert list(prefilter_groups([], client, "p", workers=4)) == []
