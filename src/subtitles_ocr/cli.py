@@ -110,6 +110,10 @@ def cli(
     analysis_lines = _read_jsonl(analysis_path)
     analyses: list[FrameAnalysis] = [FrameAnalysis.model_validate_json(line) for line in analysis_lines]
     n_analysis_done = len(analyses)
+    assert n_analysis_done <= len(groups), (
+        f"analysis.jsonl a {n_analysis_done} entrées mais groups.jsonl en a "
+        f"{len(groups)} — supprimez analysis.jsonl pour relancer l'analyse."
+    )
     remaining_groups = groups[n_analysis_done:]
     remaining_filter = filter_results[n_analysis_done:]
 

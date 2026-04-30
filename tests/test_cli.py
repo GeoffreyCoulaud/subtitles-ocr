@@ -43,6 +43,7 @@ def test_extract_skipped_when_manifest_exists(tmp_path):
 
     with patch("subtitles_ocr.cli.extract_frames") as mock_extract, \
          patch("subtitles_ocr.cli.compute_groups", return_value=[]), \
+         patch("subtitles_ocr.cli.prefilter_groups", return_value=[]), \
          patch("subtitles_ocr.cli.analyze_group"), \
          patch("subtitles_ocr.cli.build_ass_content", return_value=""):
         runner = CliRunner()
