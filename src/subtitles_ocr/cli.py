@@ -76,11 +76,11 @@ def cli(
 
         thread = threading.Thread(target=_run_extract)
         thread.start()
-        with tqdm(total=None, desc="[1/6] Extraction des frames", unit="it") as pbar:
+        with tqdm(total=None, desc="[1/6] Extraction des frames") as pbar:
             while thread.is_alive():
                 pbar.update(1)
                 time.sleep(0.1)
-        thread.join()
+            thread.join()
         if "exc" in exc_holder:
             raise exc_holder["exc"]
         frames = result_holder["frames"]
@@ -162,6 +162,7 @@ def cli(
                             pbar.set_postfix(elements=len(analysis.elements))
                         except RuntimeError as e:
                             tqdm.write(f"ERREUR [{group.frame.name}]: {e}", file=sys.stderr)
+                            pbar.set_postfix(elements="ERR")
                             analysis = FrameAnalysis(
                                 start_time=group.start_time,
                                 end_time=group.end_time,
