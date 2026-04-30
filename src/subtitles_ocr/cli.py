@@ -16,7 +16,7 @@ from subtitles_ocr.vlm.prompt import SYSTEM_PROMPT
 def _read_jsonl(path: Path) -> list[str]:
     if not path.exists():
         return []
-    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [s for line in path.read_text(encoding="utf-8").splitlines() if (s := line.strip())]
 
 
 @click.command()

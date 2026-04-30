@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from click.testing import CliRunner
 from subtitles_ocr.cli import _read_jsonl, cli
 
