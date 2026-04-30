@@ -38,10 +38,21 @@ def test_ambiguous_response_returns_true_conservative():
     assert prefilter_groups([_group()], client, "p", workers=1) == [True]
 
 
-def test_error_returns_true_conservative():
+def test_partial_errors_return_true_conservative():
     client = MagicMock()
-    client.analyze.side_effect = RuntimeError("network error")
-    assert prefilter_groups([_group()], client, "p", workers=1) == [True]
+    client.model = "smolvlm2:256m"
+    client.analyze.side_effect = ["yes", RuntimeError("network error")]
+    result = prefilter_groups([_group("a"), _group("b")], client, "p", workers=1)
+    assert result == [True, True]
+
+
+def test_all_errors_raises():
+    import pytest
+    client = MagicMock()
+    client.model = "smolvlm2:256m"
+    client.analyze.side_effect = RuntimeError("model not found")
+    with pytest.raises(RuntimeError, match="smolvlm2:256m"):
+        prefilter_groups([_group("a"), _group("b")], client, "p", workers=1)
 
 
 def test_order_preserved_with_multiple_workers():

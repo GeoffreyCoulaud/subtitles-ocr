@@ -28,8 +28,8 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Dossier de travail pour les fichiers intermédiaires")
 @click.option("--model", "-m", default="qwen3-vl:8b",
               help="Modèle Ollama pour l'analyse (défaut: qwen3-vl:8b)")
-@click.option("--filter-model", default="smolvlm2:256m",
-              help="Modèle Ollama pour le pré-filtrage (défaut: smolvlm2:256m)")
+@click.option("--filter-model", default="ahmadwaqar/smolvlm2-256m-video",
+              help="Modèle Ollama pour le pré-filtrage (défaut: ahmadwaqar/smolvlm2-256m-video)")
 @click.option("--filter-workers", default=4, type=click.IntRange(min=1),
               help="Workers parallèles pour le pré-filtrage (défaut: 4)")
 def cli(
