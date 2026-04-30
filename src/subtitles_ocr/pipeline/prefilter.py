@@ -2,6 +2,8 @@ import re
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from typing import Generator
+
 from subtitles_ocr.models import FrameGroup
 from subtitles_ocr.vlm.client import OllamaClient
 
@@ -11,7 +13,7 @@ def prefilter_groups(
     client: OllamaClient,
     prompt: str,
     workers: int,
-) -> list[bool]:
+) -> Generator[bool, None, None]:
     error_count = 0
     lock = threading.Lock()
 
@@ -31,7 +33,8 @@ def prefilter_groups(
             return True
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        results = list(executor.map(classify, groups))
+        for result in executor.map(classify, groups):
+            yield result
 
     if error_count > 0 and error_count == len(groups):
         raise RuntimeError(
@@ -40,5 +43,3 @@ def prefilter_groups(
         )
     if error_count > 0:
         print(f"Warning: {error_count}/{len(groups)} pre-filter calls failed, kept as conservative", file=sys.stderr)
-
-    return results
