@@ -32,10 +32,10 @@ def test_no_response_returns_false():
     assert prefilter_groups([_group()], client, "p", workers=1) == [False]
 
 
-def test_ambiguous_response_returns_false():
+def test_ambiguous_response_returns_true_conservative():
     client = MagicMock()
     client.analyze.return_value = "I cannot determine"
-    assert prefilter_groups([_group()], client, "p", workers=1) == [False]
+    assert prefilter_groups([_group()], client, "p", workers=1) == [True]
 
 
 def test_error_returns_true_conservative():
