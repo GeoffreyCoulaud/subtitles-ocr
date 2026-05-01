@@ -4,6 +4,7 @@ You are analyzing a video frame from a Japanese anime series with French subtitl
 Extract ALL French subtitle text visible in this image. Do NOT extract:
 - Japanese text (kanji, hiragana, katakana, romaji signs in the scene)
 - Text that is part of the original animation artwork
+- French translations of in-scene text (signs, posters, props, backgrounds)
 
 For each French subtitle element return a JSON object.
 Return ONLY a JSON array — no explanation, no markdown, no code fences.
@@ -28,3 +29,10 @@ If the color does not match any palette entry, use "other".\
 """
 
 PREFILTER_PROMPT = "Is there text visible in this image? Respond yes or no."
+
+RECONCILE_PROMPT = """\
+You are correcting OCR errors in French subtitle text.
+You will receive multiple readings of the same subtitle from different video frames.
+The readings are noisy — individual words may be wrong, but the overall structure is preserved.
+Return ONLY the single most likely correct text. No explanation, no quotes, no extra punctuation.\
+"""
