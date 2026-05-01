@@ -34,17 +34,19 @@ uv sync
 
 ### Pull the VLM models
 
-The pipeline uses two models that never coexist in VRAM:
+The pipeline uses three models. The two vision models never coexist in VRAM:
 
 - **Pre-filter** (`moondream`, 1.7 GB) — fast yes/no pass to skip frames with no text
 - **Analysis** (`qwen3-vl:8b`, 6.1 GB) — full subtitle extraction on frames that passed the pre-filter
+- **Reconciliation** (`gemma3:1b-it-qat`, ~300 MB) — text-only model that merges OCR variations across frames into clean subtitle text
 
 ```bash
 ollama pull moondream
 ollama pull qwen3-vl:8b
+ollama pull gemma3:1b-it-qat
 ```
 
-Both can be overridden with `--filter-model` and `--model`. Make sure Ollama is running before invoking the tool.
+All three can be overridden with `--filter-model`, `--model`, and `--reconcile-model`. Make sure Ollama is running before invoking the tool.
 
 ## Usage
 
@@ -63,6 +65,11 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 | `-m`, `--model` | `qwen3-vl:8b` | Ollama model for subtitle extraction |
 | `--filter-model` | `moondream` | Ollama model for the pre-filter pass |
 | `--filter-workers` | `4` | Parallel workers for the pre-filter pass |
+| `--hash-distance` | `10` | pHash distance threshold for frame grouping |
+| `--similarity-threshold` | `0.75` | Trigram similarity threshold for fuzzy event grouping |
+| `--gap-tolerance` | `0.5` | Max gap in seconds to bridge between similar events |
+| `--reconcile-model` | `gemma3:1b-it-qat` | Ollama model for text reconciliation |
+| `--reconcile-workers` | `8` | Parallel workers for reconciliation |
 
 ### Example
 
