@@ -34,5 +34,5 @@ RECONCILE_PROMPT = """\
 You are correcting OCR errors in French subtitle text.
 You will receive multiple readings of the same subtitle from different video frames.
 The readings are noisy — individual words may be wrong, but the overall structure is preserved.
-Return ONLY the single most likely correct text. No explanation, no quotes, no extra punctuation.\
+Return ONLY the single most likely correct text. No explanation, no surrounding quotes, no added punctuation.\
 """
