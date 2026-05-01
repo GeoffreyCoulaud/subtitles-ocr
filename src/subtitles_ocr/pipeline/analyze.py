@@ -1,5 +1,8 @@
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from typing import Generator
+
 from subtitles_ocr.models import FrameGroup, FrameAnalysis, SubtitleElement
 from subtitles_ocr.vlm.client import OllamaClient
 
@@ -42,3 +45,32 @@ def analyze_group(
         end_time=group.end_time,
         elements=elements,
     )
+
+
+def analyze_groups(
+    groups: list[FrameGroup],
+    filter_results: list[bool],
+    client: OllamaClient,
+    prompt: str,
+    workers: int,
+) -> Generator[FrameAnalysis, None, None]:
+    def process(group: FrameGroup, has_text: bool) -> FrameAnalysis:
+        if not has_text:
+            return FrameAnalysis(
+                start_time=group.start_time,
+                end_time=group.end_time,
+                elements=[],
+            )
+        try:
+            return analyze_group(group, client, prompt)
+        except RuntimeError as e:
+            log.warning("analyze [%s] failed: %s", group.frame.name, e)
+            return FrameAnalysis(
+                start_time=group.start_time,
+                end_time=group.end_time,
+                elements=[],
+            )
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        for result in executor.map(process, groups, filter_results):
+            yield result
