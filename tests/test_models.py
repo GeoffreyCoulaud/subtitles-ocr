@@ -76,7 +76,7 @@ def test_subtitle_event_roundtrip():
                 text="Test",
                 style="regular",
                 color="yellow",
-                border_color="black",
+                border_color="cyan",
                 position="bottom",
                 alignment="center",
             )
@@ -86,6 +86,7 @@ def test_subtitle_event_roundtrip():
     restored = SubtitleEvent.model_validate(data)
     assert restored.elements[0].text == "Test"
     assert restored.elements[0].color == "#FFFF00"
+    assert restored.elements[0].border_color == "#00FFFF"
 
 
 def test_video_info_roundtrip():
