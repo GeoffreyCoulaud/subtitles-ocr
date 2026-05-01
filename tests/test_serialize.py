@@ -7,18 +7,17 @@ from subtitles_ocr.pipeline.serialize import (
     build_ass_content,
 )
 
-
 VIDEO_INFO = VideoInfo(width=1920, height=1080, fps=24.0)
 
 
 def _element(**kwargs) -> SubtitleElement:
     defaults = dict(
         text="Test",
-        position_x=0.5, position_y=0.9,
-        font_size_relative=0.05,
-        color="#FFFFFF", outline_color="#000000",
-        bold=False, italic=False,
-        rotation=0.0, shear_x=0.0, shear_y=0.0,
+        style="regular",
+        color="white",
+        border_color="black",
+        position="bottom",
+        alignment="center",
     )
     return SubtitleElement(**{**defaults, **kwargs})
 
@@ -40,58 +39,56 @@ def test_rgb_to_ass_color_white():
 
 
 def test_rgb_to_ass_color_red():
-    # red #FF0000 → BGR → 0000FF
     assert rgb_to_ass_color("#FF0000") == "&H0000FF&"
 
 
 def test_rgb_to_ass_color_blue():
-    # blue #0000FF → BGR → FF0000
     assert rgb_to_ass_color("#0000FF") == "&HFF0000&"
 
 
-def test_element_to_ass_tags_position():
-    el = _element(position_x=0.5, position_y=0.9)
-    tags = element_to_ass_tags(el, VIDEO_INFO)
-    assert "\\pos(960,972)" in tags  # 0.5*1920=960, 0.9*1080=972
+def test_element_to_ass_tags_alignment_bottom_center():
+    assert "\\an2" in element_to_ass_tags(_element(position="bottom", alignment="center"))
 
 
-def test_element_to_ass_tags_font_size():
-    el = _element(font_size_relative=0.05)
-    tags = element_to_ass_tags(el, VIDEO_INFO)
-    assert "\\fs54" in tags  # round(0.05 * 1080) = 54
+def test_element_to_ass_tags_alignment_bottom_left():
+    assert "\\an1" in element_to_ass_tags(_element(position="bottom", alignment="left"))
+
+
+def test_element_to_ass_tags_alignment_bottom_right():
+    assert "\\an3" in element_to_ass_tags(_element(position="bottom", alignment="right"))
+
+
+def test_element_to_ass_tags_alignment_top_left():
+    assert "\\an7" in element_to_ass_tags(_element(position="top", alignment="left"))
+
+
+def test_element_to_ass_tags_alignment_top_center():
+    assert "\\an8" in element_to_ass_tags(_element(position="top", alignment="center"))
+
+
+def test_element_to_ass_tags_alignment_top_right():
+    assert "\\an9" in element_to_ass_tags(_element(position="top", alignment="right"))
 
 
 def test_element_to_ass_tags_colors():
-    el = _element(color="#FF0000", outline_color="#0000FF")
-    tags = element_to_ass_tags(el, VIDEO_INFO)
-    assert "\\c&H0000FF&" in tags   # red in BGR
-    assert "\\3c&HFF0000&" in tags  # blue in BGR
+    el = _element(color="yellow", border_color="cyan")
+    tags = element_to_ass_tags(el)
+    assert "\\c&H00FFFF&" in tags    # yellow #FFFF00 → BGR 00FFFF
+    assert "\\3c&HFFFF00&" in tags   # cyan #00FFFF → BGR FFFF00
 
 
-def test_element_to_ass_tags_bold_italic():
-    el = _element(bold=True, italic=True)
-    tags = element_to_ass_tags(el, VIDEO_INFO)
-    assert "\\b1" in tags
-    assert "\\i1" in tags
+def test_element_to_ass_tags_bold():
+    assert "\\b1" in element_to_ass_tags(_element(style="bold"))
 
 
-def test_element_to_ass_tags_no_bold_italic_when_false():
-    el = _element(bold=False, italic=False)
-    tags = element_to_ass_tags(el, VIDEO_INFO)
+def test_element_to_ass_tags_italic():
+    assert "\\i1" in element_to_ass_tags(_element(style="italic"))
+
+
+def test_element_to_ass_tags_regular_has_no_style_tags():
+    tags = element_to_ass_tags(_element(style="regular"))
     assert "\\b1" not in tags
     assert "\\i1" not in tags
-
-
-def test_element_to_ass_tags_rotation():
-    el = _element(rotation=45.0)
-    tags = element_to_ass_tags(el, VIDEO_INFO)
-    assert "\\frz45.00" in tags
-
-
-def test_element_to_ass_tags_no_rotation_when_zero():
-    el = _element(rotation=0.0)
-    tags = element_to_ass_tags(el, VIDEO_INFO)
-    assert "\\frz" not in tags
 
 
 def test_event_to_dialogue_lines_count():
@@ -99,8 +96,7 @@ def test_event_to_dialogue_lines_count():
         start_time=1.0, end_time=2.5,
         elements=[_element(text="A"), _element(text="B")],
     )
-    lines = event_to_dialogue_lines(event, VIDEO_INFO)
-    assert len(lines) == 2
+    assert len(event_to_dialogue_lines(event)) == 2
 
 
 def test_event_to_dialogue_lines_format():
@@ -108,7 +104,7 @@ def test_event_to_dialogue_lines_format():
         start_time=1.0, end_time=2.5,
         elements=[_element(text="Bonjour")],
     )
-    lines = event_to_dialogue_lines(event, VIDEO_INFO)
+    lines = event_to_dialogue_lines(event)
     assert lines[0].startswith("Dialogue: 0,0:00:01.00,0:00:02.50,Default,,0,0,0,,")
     assert "Bonjour" in lines[0]
 

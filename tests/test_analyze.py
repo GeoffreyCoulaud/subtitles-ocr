@@ -6,16 +6,11 @@ from subtitles_ocr.pipeline.analyze import analyze_group, parse_elements
 
 VALID_ELEMENT = {
     "text": "Bonjour",
-    "position_x": 0.5,
-    "position_y": 0.9,
-    "font_size_relative": 0.05,
-    "color": "#FFFFFF",
-    "outline_color": "#000000",
-    "bold": False,
-    "italic": False,
-    "rotation": 0.0,
-    "shear_x": 0.0,
-    "shear_y": 0.0,
+    "style": "regular",
+    "color": "white",
+    "border_color": "black",
+    "position": "bottom",
+    "alignment": "center",
 }
 
 
@@ -49,7 +44,7 @@ def test_parse_elements_multiple():
 
 
 def test_parse_elements_partial_invalid_keeps_valid():
-    invalid_element = {"text": "Bad", "position_x": "not-a-float"}
+    invalid_element = {"text": "Bad"}  # missing required fields: style, color, etc.
     raw = json.dumps([VALID_ELEMENT, invalid_element])
     elements = parse_elements(raw)
     assert len(elements) == 1

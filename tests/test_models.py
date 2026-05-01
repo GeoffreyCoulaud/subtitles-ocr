@@ -22,22 +22,44 @@ def test_frame_group_roundtrip():
     assert restored.frame == Path("frames/000024.jpg")
 
 
-def test_subtitle_element_defaults():
+def test_subtitle_element_resolves_color_name_to_hex():
     element = SubtitleElement(
         text="Bonjour",
-        position_x=0.5,
-        position_y=0.9,
-        font_size_relative=0.05,
-        color="#FFFFFF",
-        outline_color="#000000",
-        bold=False,
-        italic=False,
-        rotation=0.0,
-        shear_x=0.0,
-        shear_y=0.0,
+        style="regular",
+        color="white",
+        border_color="black",
+        position="bottom",
+        alignment="center",
     )
     assert element.text == "Bonjour"
-    assert element.rotation == 0.0
+    assert element.color == "#FFFFFF"
+    assert element.border_color == "#000000"
+
+
+def test_subtitle_element_unknown_color_defaults():
+    element = SubtitleElement(
+        text="Test",
+        style="regular",
+        color="other",
+        border_color="other",
+        position="bottom",
+        alignment="center",
+    )
+    assert element.color == "#FFFFFF"
+    assert element.border_color == "#000000"
+
+
+def test_subtitle_element_colors_default_independently():
+    element = SubtitleElement(
+        text="Test",
+        style="regular",
+        color="yellow",
+        border_color="other",
+        position="bottom",
+        alignment="center",
+    )
+    assert element.color == "#FFFF00"
+    assert element.border_color == "#000000"
 
 
 def test_frame_analysis_empty_elements():
@@ -52,17 +74,18 @@ def test_subtitle_event_roundtrip():
         elements=[
             SubtitleElement(
                 text="Test",
-                position_x=0.5, position_y=0.9,
-                font_size_relative=0.05,
-                color="#FFFFFF", outline_color="#000000",
-                bold=False, italic=False,
-                rotation=0.0, shear_x=0.0, shear_y=0.0,
+                style="regular",
+                color="white",
+                border_color="black",
+                position="bottom",
+                alignment="center",
             )
         ],
     )
     data = json.loads(event.model_dump_json())
     restored = SubtitleEvent.model_validate(data)
     assert restored.elements[0].text == "Test"
+    assert restored.elements[0].color == "#FFFFFF"
 
 
 def test_video_info_roundtrip():

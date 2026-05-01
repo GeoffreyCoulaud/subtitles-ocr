@@ -15,6 +15,15 @@ Style: Default,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
+_AN_CODE: dict[tuple[str, str], int] = {
+    ("top", "left"): 7,
+    ("top", "center"): 8,
+    ("top", "right"): 9,
+    ("bottom", "left"): 1,
+    ("bottom", "center"): 2,
+    ("bottom", "right"): 3,
+}
+
 
 def format_timestamp(seconds: float) -> str:
     cs = round(seconds * 100)
@@ -35,37 +44,26 @@ def rgb_to_ass_color(hex_color: str) -> str:
     return f"&H{b}{g}{r}&"
 
 
-def element_to_ass_tags(element: SubtitleElement, video_info: VideoInfo) -> str:
-    x = round(element.position_x * video_info.width)
-    y = round(element.position_y * video_info.height)
-    font_size = round(element.font_size_relative * video_info.height)
-
+def element_to_ass_tags(element: SubtitleElement) -> str:
+    an = _AN_CODE[(element.position, element.alignment)]
     tags = [
-        f"\\pos({x},{y})",
-        f"\\fs{font_size}",
+        f"\\an{an}",
         f"\\c{rgb_to_ass_color(element.color)}",
-        f"\\3c{rgb_to_ass_color(element.outline_color)}",
+        f"\\3c{rgb_to_ass_color(element.border_color)}",
     ]
-    if element.bold:
+    if element.style == "bold":
         tags.append("\\b1")
-    if element.italic:
+    elif element.style == "italic":
         tags.append("\\i1")
-    if element.rotation != 0.0:
-        tags.append(f"\\frz{element.rotation:.2f}")
-    if element.shear_x != 0.0:
-        tags.append(f"\\fax{element.shear_x:.4f}")
-    if element.shear_y != 0.0:
-        tags.append(f"\\fay{element.shear_y:.4f}")
-
     return "{" + "".join(tags) + "}"
 
 
-def event_to_dialogue_lines(event: SubtitleEvent, video_info: VideoInfo) -> list[str]:
+def event_to_dialogue_lines(event: SubtitleEvent) -> list[str]:
     start = format_timestamp(event.start_time)
     end = format_timestamp(event.end_time)
     lines = []
     for element in event.elements:
-        tags = element_to_ass_tags(element, video_info)
+        tags = element_to_ass_tags(element)
         lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{tags}{element.text}")
     return lines
 
@@ -74,5 +72,5 @@ def build_ass_content(events: list[SubtitleEvent], video_info: VideoInfo) -> str
     header = _ASS_HEADER.format(width=video_info.width, height=video_info.height)
     dialogue_lines = []
     for event in events:
-        dialogue_lines.extend(event_to_dialogue_lines(event, video_info))
+        dialogue_lines.extend(event_to_dialogue_lines(event))
     return header + "\n".join(dialogue_lines) + ("\n" if dialogue_lines else "")

@@ -4,11 +4,11 @@ from subtitles_ocr.pipeline.group import group_events
 
 def _element(text: str = "Bonjour", **kwargs) -> SubtitleElement:
     defaults = dict(
-        position_x=0.5, position_y=0.9,
-        font_size_relative=0.05,
-        color="#FFFFFF", outline_color="#000000",
-        bold=False, italic=False,
-        rotation=0.0, shear_x=0.0, shear_y=0.0,
+        style="regular",
+        color="white",
+        border_color="black",
+        position="bottom",
+        alignment="center",
     )
     return SubtitleElement(text=text, **{**defaults, **kwargs})
 
