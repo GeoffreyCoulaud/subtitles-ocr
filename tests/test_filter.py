@@ -72,11 +72,15 @@ def test_compute_hash_sensitive_to_strip_changes(tmp_path):
     assert compute_hash(path_a) != compute_hash(path_b)
 
 
-def test_compute_groups_accepts_hash_distance_parameter():
-    frames = _frames(0.0)
-    with patch("subtitles_ocr.pipeline.filter.compute_hash", return_value=HASH_A):
-        groups = compute_groups(frames, hash_distance=10)
-    assert len(groups) == 1
+def test_hash_distance_threshold_controls_grouping():
+    frames = _frames(0.0, 1.0)
+    hashes = [HASH_A, HASH_B]
+    with patch("subtitles_ocr.pipeline.filter.compute_hash", side_effect=hashes):
+        tight = compute_groups(frames, hash_distance=0)
+    with patch("subtitles_ocr.pipeline.filter.compute_hash", side_effect=hashes):
+        loose = compute_groups(frames, hash_distance=64)
+    assert len(tight) == 2
+    assert len(loose) == 1
 
 
 def test_compute_hash_ignores_middle_changes(tmp_path):

@@ -38,7 +38,7 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Modèle Ollama pour le pré-filtrage (défaut: moondream)")
 @click.option("--filter-workers", default=4, type=click.IntRange(min=1),
               help="Workers parallèles pour le pré-filtrage (défaut: 4)")
-@click.option("--hash-distance", default=10, type=click.IntRange(min=1),
+@click.option("--hash-distance", default=10, type=click.IntRange(min=0),
               help="Distance pHash pour le groupement de frames (défaut: 10)")
 @click.option("--debug", is_flag=True, default=False,
               help="Activer les logs de débogage (sorties des modèles VLM, etc.)")
