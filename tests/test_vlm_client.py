@@ -64,17 +64,19 @@ def test_chat_retries_on_failure_then_succeeds():
 
 
 def test_chat_raises_after_all_retries_exhausted():
-    with patch("subtitles_ocr.vlm.client.ollama.chat", side_effect=Exception("always fails")):
+    with patch("subtitles_ocr.vlm.client.ollama.chat", side_effect=Exception("always fails")) as mock_chat:
         client = OllamaClient(model="test-model")
         with pytest.raises(RuntimeError, match="always fails"):
             client.chat("prompt", system="system", retries=3)
+    assert mock_chat.call_count == 3
 
 
 def test_chat_raises_on_empty_content():
     mock_response = MagicMock()
     mock_response.message.content = None
     with patch("subtitles_ocr.vlm.client.ollama.chat",
-               side_effect=[mock_response, mock_response, mock_response]):
+               side_effect=[mock_response, mock_response]) as mock_chat:
         client = OllamaClient(model="test-model")
         with pytest.raises(RuntimeError, match="no text content"):
             client.chat("prompt", system="system", retries=2)
+    assert mock_chat.call_count == 2
