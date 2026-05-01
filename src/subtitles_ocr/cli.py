@@ -15,6 +15,8 @@ from subtitles_ocr.pipeline.filter import compute_groups
 from subtitles_ocr.pipeline.prefilter import prefilter_groups
 from subtitles_ocr.pipeline.analyze import analyze_group
 from subtitles_ocr.pipeline.group import group_events
+from subtitles_ocr.pipeline.fuzzy_group import fuzzy_group_events
+from subtitles_ocr.pipeline.reconcile import reconcile_groups
 from subtitles_ocr.pipeline.serialize import build_ass_content
 from subtitles_ocr.vlm.client import OllamaClient
 from subtitles_ocr.vlm.prompt import SYSTEM_PROMPT, PREFILTER_PROMPT
@@ -40,6 +42,14 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Workers parallèles pour le pré-filtrage (défaut: 4)")
 @click.option("--hash-distance", default=10, type=click.IntRange(min=0),
               help="Distance pHash pour le groupement de frames (défaut: 10)")
+@click.option("--similarity-threshold", default=0.75, type=click.FloatRange(min=0.0, max=1.0),
+              help="Seuil de similarité trigrame pour le regroupement flou (défaut: 0.75)")
+@click.option("--gap-tolerance", default=0.5, type=float,
+              help="Tolérance de délai (secondes) entre événements similaires (défaut: 0.5)")
+@click.option("--reconcile-model", default="gemma3:1b-it-qat",
+              help="Modèle Ollama pour la réconciliation de texte (défaut: gemma3:1b-it-qat)")
+@click.option("--reconcile-workers", default=8, type=click.IntRange(min=1),
+              help="Workers parallèles pour la réconciliation (défaut: 8)")
 @click.option("--debug", is_flag=True, default=False,
               help="Activer les logs de débogage (sorties des modèles VLM, etc.)")
 def cli(
@@ -50,6 +60,10 @@ def cli(
     filter_model: str,
     filter_workers: int,
     hash_distance: int,
+    similarity_threshold: float,
+    gap_tolerance: float,
+    reconcile_model: str,
+    reconcile_workers: int,
     debug: bool,
 ) -> None:
     """Extrait les sous-titres incrustés d'une vidéo anime et produit un fichier .ass."""
@@ -71,10 +85,12 @@ def cli(
     filter_path = workdir / "filter.jsonl"
     analysis_path = workdir / "analysis.jsonl"
     events_path = workdir / "events.json"
+    fuzzy_groups_path = workdir / "fuzzy_groups.jsonl"
+    reconciled_path = workdir / "reconciled.jsonl"
 
     # Étape 1 : extraction
     if manifest_path.exists() and video_info_path.exists():
-        click.echo("[1/6] Extraction ignorée (reprise).")
+        click.echo("[1/8] Extraction ignorée (reprise).")
         frames = [Frame.model_validate(f) for f in json.loads(manifest_path.read_text(encoding="utf-8"))]
         video_info = VideoInfo.model_validate_json(video_info_path.read_text(encoding="utf-8"))
     else:
@@ -89,7 +105,7 @@ def cli(
 
         thread = threading.Thread(target=_run_extract)
         thread.start()
-        with tqdm(total=None, desc="[1/6] Extraction des frames") as pbar:
+        with tqdm(total=None, desc="[1/8] Extraction des frames") as pbar:
             while thread.is_alive():
                 pbar.update(1)
                 time.sleep(0.1)
@@ -107,11 +123,11 @@ def cli(
 
     # Étape 2 : filtrage pHash
     if groups_path.exists():
-        click.echo("[2/6] Groupement ignoré (reprise).")
+        click.echo("[2/8] Groupement ignoré (reprise).")
         groups = [FrameGroup.model_validate_json(line) for line in _read_jsonl(groups_path)]
     else:
         groups = compute_groups(
-            tqdm(frames, desc="[2/6] Groupement pHash", total=len(frames), unit="frame"),
+            tqdm(frames, desc="[2/8] Groupement pHash", total=len(frames), unit="frame"),
             hash_distance=hash_distance,
         )
         with groups_path.open("w", encoding="utf-8") as f:
@@ -134,7 +150,7 @@ def cli(
                 tqdm(
                     prefilter_groups(remaining_for_filter, filter_client, PREFILTER_PROMPT, filter_workers),
                     total=len(remaining_for_filter),
-                    desc=f"[3/6] Pré-filtrage ({filter_model})",
+                    desc=f"[3/8] Pré-filtrage ({filter_model})",
                     unit="groupe",
                 ),
             ):
@@ -143,7 +159,7 @@ def cli(
         kept = sum(filter_results)
         click.echo(f"      {kept}/{len(groups)} groupes conservés pour l'analyse.")
     else:
-        click.echo("[3/6] Pré-filtrage ignoré (reprise).")
+        click.echo("[3/8] Pré-filtrage ignoré (reprise).")
 
     # Étape 4 : analyse VLM
     assert len(filter_results) == len(groups), (
@@ -165,7 +181,7 @@ def cli(
         mode = "a" if n_analysis_done > 0 else "w"
         n_to_analyze = sum(remaining_filter)
         with analysis_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
-            with tqdm(total=n_to_analyze, desc=f"[4/6] Analyse VLM ({model})", unit="groupe") as pbar:
+            with tqdm(total=n_to_analyze, desc=f"[4/8] Analyse VLM ({model})", unit="groupe") as pbar:
                 for group, has_text in zip(remaining_groups, remaining_filter):
                     if not has_text:
                         analysis = FrameAnalysis(
@@ -189,17 +205,17 @@ def cli(
                     f.write(analysis.model_dump_json() + "\n")
                     analyses.append(analysis)
     else:
-        click.echo("[4/6] Analyse ignorée (reprise).")
+        click.echo("[4/8] Analyse ignorée (reprise).")
 
     # Étape 5 : groupement temporel
     if events_path.exists():
-        click.echo("[5/6] Groupement temporel ignoré (reprise).")
+        click.echo("[5/8] Groupement temporel ignoré (reprise).")
         events = [
             SubtitleEvent.model_validate(e)
             for e in json.loads(events_path.read_text(encoding="utf-8"))
         ]
     else:
-        click.echo("[5/6] Groupement temporel des événements...")
+        click.echo("[5/8] Groupement temporel des événements...")
         events = group_events(analyses)
         events_path.write_text(
             json.dumps([e.model_dump(mode="json") for e in events], indent=2),
@@ -207,9 +223,53 @@ def cli(
         )
         click.echo(f"      {len(events)} événements.")
 
-    # Étape 6 : sérialisation
-    click.echo(f"[6/6] Écriture du fichier .ass → {output}")
-    ass_content = build_ass_content(events, video_info)
+    # Étape 6 : regroupement flou
+    if fuzzy_groups_path.exists():
+        click.echo("[6/8] Regroupement flou ignoré (reprise).")
+        fuzzy_groups = [
+            [SubtitleEvent.model_validate(e) for e in json.loads(line)]
+            for line in _read_jsonl(fuzzy_groups_path)
+        ]
+    else:
+        click.echo("[6/8] Regroupement flou des événements...")
+        fuzzy_groups = fuzzy_group_events(
+            events,
+            similarity_threshold=similarity_threshold,
+            gap_tolerance=gap_tolerance,
+        )
+        with fuzzy_groups_path.open("w", encoding="utf-8") as f:
+            for cluster in fuzzy_groups:
+                f.write(json.dumps([e.model_dump(mode="json") for e in cluster]) + "\n")
+        click.echo(f"      {len(fuzzy_groups)} groupes fuzzy.")
+
+    # Étape 7 : réconciliation
+    reconciled_lines = _read_jsonl(reconciled_path)
+    reconciled: list[SubtitleEvent] = [SubtitleEvent.model_validate_json(line) for line in reconciled_lines]
+    n_reconciled_done = len(reconciled)
+    assert n_reconciled_done <= len(fuzzy_groups), (
+        f"reconciled.jsonl a {n_reconciled_done} entrées mais fuzzy_groups.jsonl en a "
+        f"{len(fuzzy_groups)} — supprimez reconciled.jsonl pour relancer la réconciliation."
+    )
+    remaining_clusters = fuzzy_groups[n_reconciled_done:]
+
+    if remaining_clusters:
+        reconcile_client = OllamaClient(model=reconcile_model)
+        mode = "a" if n_reconciled_done > 0 else "w"
+        with reconciled_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
+            for event in tqdm(
+                reconcile_groups(remaining_clusters, reconcile_client, reconcile_workers),
+                total=len(remaining_clusters),
+                desc=f"[7/8] Réconciliation ({reconcile_model})",
+                unit="groupe",
+            ):
+                f.write(event.model_dump_json() + "\n")
+                reconciled.append(event)
+    else:
+        click.echo("[7/8] Réconciliation ignorée (reprise).")
+
+    # Étape 8 : sérialisation
+    click.echo(f"[8/8] Écriture du fichier .ass → {output}")
+    ass_content = build_ass_content(reconciled, video_info)
     output.write_text(ass_content, encoding="utf-8")
 
     click.echo(f"\nTerminé. Fichiers intermédiaires dans : {workdir}")
