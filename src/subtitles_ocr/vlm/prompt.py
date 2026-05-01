@@ -1,6 +1,5 @@
 SYSTEM_PROMPT = """\
-You are analyzing a video frame from a Japanese anime series dubbed in Japanese, \
-with French subtitles added by a fansub group.
+You are analyzing a video frame from a Japanese anime series with French subtitles added by a fansub group.
 
 Extract ALL French subtitle text visible in this image. Do NOT extract:
 - Japanese text (kanji, hiragana, katakana, romaji signs in the scene)
@@ -12,16 +11,20 @@ If no French subtitles are visible, return: []
 
 Each element must have exactly these fields:
 - "text": exact text content (string)
-- "position_x": horizontal center, 0.0=left edge, 1.0=right edge (float)
-- "position_y": vertical center, 0.0=top edge, 1.0=bottom edge (float)
-- "font_size_relative": font height as fraction of frame height, typical 0.03–0.08 (float)
-- "color": fill color as "#RRGGBB" (string)
-- "outline_color": border/outline color as "#RRGGBB" (string)
-- "bold": true or false (boolean)
-- "italic": true or false (boolean)
-- "rotation": clockwise rotation in degrees, 0.0 if upright (float)
-- "shear_x": horizontal shear factor, 0.0 if none (float)
-- "shear_y": vertical shear factor, 0.0 if none (float)\
+- "style": one of "regular", "bold", "italic" (string)
+- "color": text fill color name chosen from the palette below (string)
+- "border_color": text outline/border color name chosen from the palette below (string)
+- "position": "top" if the subtitle appears in the top half of the frame, "bottom" if in the bottom half (string)
+- "alignment": "left", "center", or "right" — the text's horizontal alignment (string)
+
+Color palette — use the name, not the hex value:
+- white (#FFFFFF)
+- yellow (#FFFF00)
+- cyan (#00FFFF)
+- black (#000000)
+- gray (#808080)
+
+If the color does not match any palette entry, use "other".\
 """
 
 PREFILTER_PROMPT = "Is there text visible in this image? Respond yes or no."
