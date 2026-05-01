@@ -1,3 +1,4 @@
+import logging
 import re
 import sys
 import threading
@@ -6,6 +7,8 @@ from typing import Generator
 
 from subtitles_ocr.models import FrameGroup
 from subtitles_ocr.vlm.client import OllamaClient
+
+log = logging.getLogger(__name__)
 
 
 def prefilter_groups(
@@ -20,14 +23,18 @@ def prefilter_groups(
     def classify(group: FrameGroup) -> bool:
         nonlocal error_count
         try:
-            response = client.analyze(group.frame, prompt)
+            response = client.analyze(group.frame, prompt, options={"num_predict": 10})
             low = response.lower()
             if re.search(r"\byes\b", low):
+                log.debug("prefilter [%s] → YES | %r", group.frame.name, response)
                 return True
             if re.search(r"\bno\b", low):
+                log.debug("prefilter [%s] → NO  | %r", group.frame.name, response)
                 return False
+            log.debug("prefilter [%s] → AMBIGUOUS (kept) | %r", group.frame.name, response)
             return True  # ambiguous → conservative, keep frame
-        except RuntimeError:
+        except RuntimeError as e:
+            log.debug("prefilter [%s] → ERROR | %s", group.frame.name, e)
             with lock:
                 error_count += 1
             return True

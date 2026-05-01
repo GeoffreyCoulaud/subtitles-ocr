@@ -1,4 +1,5 @@
 import json
+import logging
 import sys
 import threading
 import time
@@ -6,6 +7,7 @@ from pathlib import Path
 
 import click
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from subtitles_ocr.models import Frame, FrameAnalysis, FrameGroup, SubtitleEvent, VideoInfo
 from subtitles_ocr.pipeline.extract import extract_frames
@@ -36,6 +38,8 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Modèle Ollama pour le pré-filtrage (défaut: moondream)")
 @click.option("--filter-workers", default=4, type=click.IntRange(min=1),
               help="Workers parallèles pour le pré-filtrage (défaut: 4)")
+@click.option("--debug", is_flag=True, default=False,
+              help="Activer les logs de débogage (sorties des modèles VLM, etc.)")
 def cli(
     video: Path,
     output: Path | None,
@@ -43,8 +47,14 @@ def cli(
     model: str,
     filter_model: str,
     filter_workers: int,
+    debug: bool,
 ) -> None:
     """Extrait les sous-titres incrustés d'une vidéo anime et produit un fichier .ass."""
+    if debug:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s %(message)s")
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+
     if output is None:
         output = video.with_suffix(".ass")
     if workdir is None:
@@ -114,7 +124,7 @@ def cli(
     if remaining_for_filter:
         filter_client = OllamaClient(model=filter_model)
         mode = "a" if n_filter_done > 0 else "w"
-        with filter_path.open(mode, encoding="utf-8") as f:
+        with filter_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
             for group, has_text in zip(
                 remaining_for_filter,
                 tqdm(
@@ -149,8 +159,9 @@ def cli(
     if remaining_groups:
         client = OllamaClient(model=model)
         mode = "a" if n_analysis_done > 0 else "w"
+        n_to_analyze = sum(remaining_filter)
         with analysis_path.open(mode, encoding="utf-8") as f:
-            with tqdm(total=len(remaining_groups), desc=f"[4/6] Analyse VLM ({model})", unit="groupe") as pbar:
+            with tqdm(total=n_to_analyze, desc=f"[4/6] Analyse VLM ({model})", unit="groupe") as pbar:
                 for group, has_text in zip(remaining_groups, remaining_filter):
                     if not has_text:
                         analysis = FrameAnalysis(
@@ -170,9 +181,9 @@ def cli(
                                 end_time=group.end_time,
                                 elements=[],
                             )
+                        pbar.update(1)
                     f.write(analysis.model_dump_json() + "\n")
                     analyses.append(analysis)
-                    pbar.update(1)
     else:
         click.echo("[4/6] Analyse ignorée (reprise).")
 

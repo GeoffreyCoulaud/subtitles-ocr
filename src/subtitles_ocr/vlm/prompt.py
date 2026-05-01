@@ -24,7 +24,4 @@ Each element must have exactly these fields:
 - "shear_y": vertical shear factor, 0.0 if none (float)\
 """
 
-PREFILTER_PROMPT = (
-    "Does this image contain any text, subtitle, or caption overlay? "
-    "Answer only yes or no."
-)
+PREFILTER_PROMPT = "Is there text visible in this image? Respond yes or no."
