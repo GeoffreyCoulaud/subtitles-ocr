@@ -160,7 +160,7 @@ def cli(
         client = OllamaClient(model=model)
         mode = "a" if n_analysis_done > 0 else "w"
         n_to_analyze = sum(remaining_filter)
-        with analysis_path.open(mode, encoding="utf-8") as f:
+        with analysis_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
             with tqdm(total=n_to_analyze, desc=f"[4/6] Analyse VLM ({model})", unit="groupe") as pbar:
                 for group, has_text in zip(remaining_groups, remaining_filter):
                     if not has_text:
