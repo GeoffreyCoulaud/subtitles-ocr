@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from click.testing import CliRunner
 from subtitles_ocr.cli import _read_jsonl, cli
+from subtitles_ocr.models import FrameAnalysis
 
 
 def test_read_jsonl_returns_empty_when_file_missing(tmp_path):
@@ -44,7 +45,7 @@ def test_extract_skipped_when_manifest_exists(tmp_path):
     with patch("subtitles_ocr.cli.extract_frames") as mock_extract, \
          patch("subtitles_ocr.cli.compute_groups", return_value=[]), \
          patch("subtitles_ocr.cli.prefilter_groups", return_value=[]), \
-         patch("subtitles_ocr.cli.analyze_group"), \
+         patch("subtitles_ocr.cli.analyze_groups", return_value=[]), \
          patch("subtitles_ocr.cli.build_ass_content", return_value=""):
         runner = CliRunner()
         runner.invoke(cli, [
@@ -63,7 +64,7 @@ def test_phash_skipped_when_groups_exist(tmp_path):
     with patch("subtitles_ocr.cli.extract_frames"), \
          patch("subtitles_ocr.cli.compute_groups") as mock_compute, \
          patch("subtitles_ocr.cli.prefilter_groups", return_value=[False]), \
-         patch("subtitles_ocr.cli.analyze_group"), \
+         patch("subtitles_ocr.cli.analyze_groups", return_value=[]), \
          patch("subtitles_ocr.cli.build_ass_content", return_value=""):
         runner = CliRunner()
         runner.invoke(cli, [
@@ -86,7 +87,7 @@ def test_prefilter_is_called_with_all_groups(tmp_path):
     with patch("subtitles_ocr.cli.extract_frames"), \
          patch("subtitles_ocr.cli.compute_groups"), \
          patch("subtitles_ocr.cli.prefilter_groups", return_value=[False, False]) as mock_pf, \
-         patch("subtitles_ocr.cli.analyze_group") as mock_analyze, \
+         patch("subtitles_ocr.cli.analyze_groups", return_value=[]) as mock_analyze, \
          patch("subtitles_ocr.cli.build_ass_content", return_value=""):
         runner = CliRunner()
         runner.invoke(cli, [
@@ -95,12 +96,12 @@ def test_prefilter_is_called_with_all_groups(tmp_path):
         ])
 
     mock_pf.assert_called_once()
-    # analyze_group ne doit pas être appelé si tous les groupes sont filtrés
-    mock_analyze.assert_not_called()
+    # analyze_groups est appelé (même avec tous les groupes filtrés, il retourne des analyses vides)
+    mock_analyze.assert_called_once()
 
 
 def test_analyze_resumes_from_existing_analysis(tmp_path):
-    """Si analysis.jsonl a N lignes, seuls les groupes N+ sont envoyés à analyze_group."""
+    """Si analysis.jsonl a N lignes, seuls les groupes N+ sont envoyés à analyze_groups."""
     video, workdir = _minimal_workdir(tmp_path)
 
     # 3 groupes dans groups.jsonl
@@ -119,16 +120,12 @@ def test_analyze_resumes_from_existing_analysis(tmp_path):
         "\n".join([json.dumps(done)] * 2) + "\n", encoding="utf-8"
     )
 
-    mock_analysis = MagicMock()
-    mock_analysis.start_time = 0.0
-    mock_analysis.end_time = 1.0
-    mock_analysis.elements = []
-    mock_analysis.model_dump_json.return_value = json.dumps(done)
+    fake_analysis = FrameAnalysis(start_time=0.0, end_time=1.0, elements=[])
 
     with patch("subtitles_ocr.cli.extract_frames"), \
          patch("subtitles_ocr.cli.compute_groups"), \
          patch("subtitles_ocr.cli.prefilter_groups"), \
-         patch("subtitles_ocr.cli.analyze_group", return_value=mock_analysis) as mock_analyze, \
+         patch("subtitles_ocr.cli.analyze_groups", return_value=[fake_analysis]) as mock_analyze, \
          patch("subtitles_ocr.cli.build_ass_content", return_value=""):
         runner = CliRunner()
         runner.invoke(cli, [
@@ -136,8 +133,9 @@ def test_analyze_resumes_from_existing_analysis(tmp_path):
             "--output", str(tmp_path / "out.ass"),
         ])
 
-    # Seul le 3e groupe doit être analysé
+    # analyze_groups called once with the 1 remaining group
     assert mock_analyze.call_count == 1
+    assert len(mock_analyze.call_args[0][0]) == 1
 
 
 def test_prefilter_writes_results_incrementally(tmp_path):
@@ -157,37 +155,7 @@ def test_prefilter_writes_results_incrementally(tmp_path):
     with patch("subtitles_ocr.cli.extract_frames"), \
          patch("subtitles_ocr.cli.compute_groups"), \
          patch("subtitles_ocr.cli.prefilter_groups", side_effect=partial_prefilter), \
-         patch("subtitles_ocr.cli.analyze_group"), \
-         patch("subtitles_ocr.cli.build_ass_content", return_value=""):
-        runner = CliRunner()
-        runner.invoke(cli, [
-            str(video), "--workdir", str(workdir),
-            "--output", str(tmp_path / "out.ass"),
-        ])
-
-    # The 2 results yielded before the crash must be persisted
-    filter_lines = _read_jsonl(workdir / "filter.jsonl")
-    assert len(filter_lines) == 2
-
-
-def test_prefilter_writes_results_incrementally(tmp_path):
-    """Results are flushed to filter.jsonl as they arrive, so a crash mid-run preserves progress."""
-    video, workdir = _minimal_workdir(tmp_path)
-
-    fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
-    (workdir / "groups.jsonl").write_text(
-        "\n".join([json.dumps(fake_group)] * 3) + "\n", encoding="utf-8"
-    )
-
-    def partial_prefilter(groups, client, prompt, workers):
-        yield False
-        yield True
-        raise RuntimeError("simulated crash")
-
-    with patch("subtitles_ocr.cli.extract_frames"), \
-         patch("subtitles_ocr.cli.compute_groups"), \
-         patch("subtitles_ocr.cli.prefilter_groups", side_effect=partial_prefilter), \
-         patch("subtitles_ocr.cli.analyze_group"), \
+         patch("subtitles_ocr.cli.analyze_groups", return_value=[]), \
          patch("subtitles_ocr.cli.build_ass_content", return_value=""):
         runner = CliRunner()
         runner.invoke(cli, [

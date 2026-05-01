@@ -1,6 +1,5 @@
 import json
 import logging
-import sys
 import threading
 import time
 from pathlib import Path
@@ -13,7 +12,7 @@ from subtitles_ocr.models import Frame, FrameAnalysis, FrameGroup, SubtitleEvent
 from subtitles_ocr.pipeline.extract import extract_frames
 from subtitles_ocr.pipeline.filter import compute_groups
 from subtitles_ocr.pipeline.prefilter import prefilter_groups
-from subtitles_ocr.pipeline.analyze import analyze_group
+from subtitles_ocr.pipeline.analyze import analyze_groups
 from subtitles_ocr.pipeline.group import group_events
 from subtitles_ocr.pipeline.fuzzy_group import fuzzy_group_events
 from subtitles_ocr.pipeline.reconcile import reconcile_groups
@@ -34,12 +33,15 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Chemin du fichier .ass de sortie (défaut: <video>.ass)")
 @click.option("--workdir", "-w", type=click.Path(path_type=Path), default=None,
               help="Dossier de travail pour les fichiers intermédiaires")
-@click.option("--model", "-m", default="qwen3-vl:8b",
-              help="Modèle Ollama pour l'analyse (défaut: qwen3-vl:8b)")
-@click.option("--filter-model", default="moondream",
-              help="Modèle Ollama pour le pré-filtrage (défaut: moondream)")
+@click.option("--model", "-m", default="qwen2.5vl:3b",
+              help="Modèle Ollama pour l'analyse (défaut: qwen2.5vl:3b)")
+@click.option("--filter-model", default="llava:7b",
+              help="Modèle Ollama pour le pré-filtrage (défaut: llava:7b)")
 @click.option("--filter-workers", default=4, type=click.IntRange(min=1),
               help="Workers parallèles pour le pré-filtrage (défaut: 4)")
+@click.option("--analyze-workers", default=1, type=click.IntRange(min=1),
+              help="Workers parallèles pour l'analyse VLM (défaut: 1). "
+                   "Valeurs > 1 requièrent OLLAMA_NUM_PARALLEL >= valeur dans l'env Ollama.")
 @click.option("--hash-distance", default=10, type=click.IntRange(min=0),
               help="Distance pHash pour le groupement de frames (défaut: 10)")
 @click.option("--similarity-threshold", default=0.75, type=click.FloatRange(min=0.0, max=1.0),
@@ -59,6 +61,7 @@ def cli(
     model: str,
     filter_model: str,
     filter_workers: int,
+    analyze_workers: int,
     hash_distance: int,
     similarity_threshold: float,
     gap_tolerance: float,
@@ -179,31 +182,15 @@ def cli(
     if remaining_groups:
         client = OllamaClient(model=model)
         mode = "a" if n_analysis_done > 0 else "w"
-        n_to_analyze = sum(remaining_filter)
         with analysis_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
-            with tqdm(total=n_to_analyze, desc=f"[4/8] Analyse VLM ({model})", unit="groupe") as pbar:
-                for group, has_text in zip(remaining_groups, remaining_filter):
-                    if not has_text:
-                        analysis = FrameAnalysis(
-                            start_time=group.start_time,
-                            end_time=group.end_time,
-                            elements=[],
-                        )
-                    else:
-                        try:
-                            analysis = analyze_group(group, client, SYSTEM_PROMPT)
-                            pbar.set_postfix(elements=len(analysis.elements))
-                        except RuntimeError as e:
-                            tqdm.write(f"ERREUR [{group.frame.name}]: {e}", file=sys.stderr)
-                            pbar.set_postfix(elements="ERR")
-                            analysis = FrameAnalysis(
-                                start_time=group.start_time,
-                                end_time=group.end_time,
-                                elements=[],
-                            )
-                        pbar.update(1)
-                    f.write(analysis.model_dump_json() + "\n")
-                    analyses.append(analysis)
+            for analysis in tqdm(
+                analyze_groups(remaining_groups, remaining_filter, client, SYSTEM_PROMPT, analyze_workers),
+                total=len(remaining_groups),
+                desc=f"[4/8] Analyse VLM ({model})",
+                unit="groupe",
+            ):
+                f.write(analysis.model_dump_json() + "\n")
+                analyses.append(analysis)
     else:
         click.echo("[4/8] Analyse ignorée (reprise).")
 
