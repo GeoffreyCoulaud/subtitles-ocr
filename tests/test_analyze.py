@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 from subtitles_ocr.models import FrameGroup, SubtitleElement
@@ -68,7 +69,6 @@ def test_analyze_group_parses_elements():
 
 
 def test_analyze_group_logs_raw_at_debug(caplog):
-    import logging
     client = MagicMock()
     client.analyze.return_value = "[]"
     with caplog.at_level(logging.DEBUG, logger="subtitles_ocr.pipeline.analyze"):
@@ -77,7 +77,6 @@ def test_analyze_group_logs_raw_at_debug(caplog):
 
 
 def test_analyze_group_logs_no_elements(caplog):
-    import logging
     client = MagicMock()
     client.analyze.return_value = "[]"
     with caplog.at_level(logging.INFO, logger="subtitles_ocr.pipeline.analyze"):
@@ -88,7 +87,6 @@ def test_analyze_group_logs_no_elements(caplog):
 
 
 def test_analyze_group_logs_one_info_line_per_element(caplog):
-    import logging
     client = MagicMock()
     client.analyze.return_value = json.dumps([VALID_ELEMENT, {**VALID_ELEMENT, "text": "Au revoir"}])
     with caplog.at_level(logging.INFO, logger="subtitles_ocr.pipeline.analyze"):
