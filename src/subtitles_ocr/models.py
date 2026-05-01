@@ -38,8 +38,10 @@ class SubtitleElement(BaseModel):
 
     @model_validator(mode="after")
     def resolve_colors(self) -> "SubtitleElement":
-        self.color = SUBTITLE_PALETTE.get(self.color, "#FFFFFF")
-        self.border_color = SUBTITLE_PALETTE.get(self.border_color, "#000000")
+        if not self.color.startswith("#"):
+            self.color = SUBTITLE_PALETTE.get(self.color, "#FFFFFF")
+        if not self.border_color.startswith("#"):
+            self.border_color = SUBTITLE_PALETTE.get(self.border_color, "#000000")
         return self
 
 
