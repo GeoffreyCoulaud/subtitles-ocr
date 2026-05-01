@@ -31,3 +31,26 @@ class OllamaClient:
             log.debug("Empty response from %s — full response: %r", self.model, response)
             raise RuntimeError(f"Ollama returned no text content ({self.model})")
         return content
+
+    def chat(self, prompt: str, system: str, retries: int = 3) -> str:
+        last_error: Exception | None = None
+        for attempt in range(max(1, retries)):
+            try:
+                response = ollama.chat(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+                content = response.message.content
+                if not content:
+                    log.debug("Empty response from %s — full response: %r", self.model, response)
+                    raise RuntimeError(f"Ollama returned no text content ({self.model})")
+                return content
+            except Exception as e:
+                last_error = e
+                log.debug("chat attempt %d/%d failed (%s): %s", attempt + 1, retries, self.model, e)
+        raise RuntimeError(
+            f"Ollama chat failed after {retries} attempts ({self.model}): {last_error}"
+        ) from last_error
