@@ -65,3 +65,35 @@ def test_analyze_group_parses_elements():
     analysis = analyze_group(_group(), client, prompt="p")
     assert len(analysis.elements) == 1
     assert analysis.elements[0].text == "Bonjour"
+
+
+def test_analyze_group_logs_raw_at_debug(caplog):
+    import logging
+    client = MagicMock()
+    client.analyze.return_value = "[]"
+    with caplog.at_level(logging.DEBUG, logger="subtitles_ocr.pipeline.analyze"):
+        analyze_group(_group(), client, prompt="p")
+    assert any("raw →" in r.message and r.levelno == logging.DEBUG for r in caplog.records)
+
+
+def test_analyze_group_logs_no_elements(caplog):
+    import logging
+    client = MagicMock()
+    client.analyze.return_value = "[]"
+    with caplog.at_level(logging.INFO, logger="subtitles_ocr.pipeline.analyze"):
+        analyze_group(_group(), client, prompt="p")
+    info_msgs = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert len(info_msgs) == 1
+    assert "(no elements)" in info_msgs[0]
+
+
+def test_analyze_group_logs_one_info_line_per_element(caplog):
+    import logging
+    client = MagicMock()
+    client.analyze.return_value = json.dumps([VALID_ELEMENT, {**VALID_ELEMENT, "text": "Au revoir"}])
+    with caplog.at_level(logging.INFO, logger="subtitles_ocr.pipeline.analyze"):
+        analyze_group(_group(), client, prompt="p")
+    info_msgs = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert len(info_msgs) == 2
+    assert "Bonjour" in info_msgs[0]
+    assert "Au revoir" in info_msgs[1]
