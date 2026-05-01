@@ -21,8 +21,8 @@ The pipeline runs 8 sequential steps. Every step writes its output to the work d
 |------|------|--------|-------------|
 | 1 | Extract | `manifest.json`, `video_info.json` | ffmpeg extracts every frame at native FPS |
 | 2 | pHash filter | `groups.jsonl` | Consecutive frames with an identical perceptual hash are collapsed into one group |
-| 3 | Pre-filter | `filter.jsonl` | `moondream` classifies each group as containing text or not — fast binary pass to skip blank frames |
-| 4 | Analyze | `analysis.jsonl` | `qwen3-vl:8b` extracts text, style, color, position, and alignment from each text-bearing group |
+| 3 | Pre-filter | `filter.jsonl` | `llava:7b` classifies each group as containing text or not — fast binary pass to skip blank frames |
+| 4 | Analyze | `analysis.jsonl` | `qwen2.5vl:3b` extracts text, style, color, position, and alignment from each text-bearing group |
 | 5 | Group events | `events.json` | Consecutive identical analyses are merged into subtitle events |
 | 6 | Fuzzy group | `fuzzy_groups.jsonl` | Similar events are clustered using trigram similarity; short gaps between similar events are bridged |
 | 7 | Reconcile | `reconciled.jsonl` | Each cluster is collapsed into one canonical event — `gemma3:1b-it-qat` reconciles noisy text readings; majority vote picks style/color/alignment |
@@ -51,13 +51,13 @@ uv sync
 
 The pipeline uses three models. The two vision models never coexist in VRAM:
 
-- **Pre-filter** (`moondream`, 1.7 GB) — fast yes/no pass to skip frames with no text
-- **Analysis** (`qwen3-vl:8b`, 6.1 GB) — full subtitle extraction on frames that passed the pre-filter
+- **Pre-filter** (`llava:7b`, 4.7 GB) — fast yes/no pass to skip frames with no text
+- **Analysis** (`qwen2.5vl:3b`, 3.2 GB) — full subtitle extraction on frames that passed the pre-filter
 - **Reconciliation** (`gemma3:1b-it-qat`, ~300 MB) — text-only model that merges OCR variations across frames into clean subtitle text
 
 ```bash
-ollama pull moondream
-ollama pull qwen3-vl:8b
+ollama pull llava:7b
+ollama pull qwen2.5vl:3b
 ollama pull gemma3:1b-it-qat
 ```
 
@@ -77,9 +77,10 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 |--------|---------|-------------|
 | `-o`, `--output` | `<video>.ass` | Path to the output `.ass` file |
 | `-w`, `--workdir` | `<video>_subtitles_ocr/` | Directory for intermediate files |
-| `-m`, `--model` | `qwen3-vl:8b` | Ollama model for subtitle extraction |
-| `--filter-model` | `moondream` | Ollama model for the pre-filter pass |
+| `-m`, `--model` | `qwen2.5vl:3b` | Ollama model for subtitle extraction |
+| `--filter-model` | `llava:7b` | Ollama model for the pre-filter pass |
 | `--filter-workers` | `4` | Parallel workers for the pre-filter pass |
+| `--analyze-workers` | `1` | Parallel workers for the analysis pass (requires `OLLAMA_NUM_PARALLEL` ≥ value in Ollama's env) |
 | `--hash-distance` | `10` | pHash distance threshold for frame grouping |
 | `--similarity-threshold` | `0.75` | Trigram similarity threshold for fuzzy event grouping |
 | `--gap-tolerance` | `0.5` | Max gap in seconds to bridge between similar events |

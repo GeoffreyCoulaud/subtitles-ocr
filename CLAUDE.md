@@ -41,15 +41,15 @@ The tool runs a 6-step sequential pipeline, fully resumable: each step checks it
 ```
 [1] extract       → manifest.json, video_info.json   (ffmpeg, all frames at native FPS)
 [2] pHash filter  → groups.jsonl                     (imagehash, groups consecutive identical frames)
-[3] pre-filter    → filter.jsonl                     (moondream via Ollama, N parallel workers)
-[4] analyze       → analysis.jsonl                   (qwen3-vl:8b via Ollama, sequential)
+[3] pre-filter    → filter.jsonl                     (llava:7b via Ollama, N parallel workers)
+[4] analyze       → analysis.jsonl                   (qwen2.5vl:3b via Ollama, N parallel workers)
 [5] group_events  → events.json                      (merges consecutive identical FrameAnalysis)
 [6] serialize     → output.ass
 ```
 
 Steps 3 and 4 use JSONL files as position-indexed checkpoints: line N = group N. Resume works by counting existing lines and slicing `groups[n_done:]`.
 
-**Two-model design:** `moondream` (pre-filter) and `qwen3-vl:8b` (analyze) never coexist in VRAM — the pre-filter pass finishes completely before the analyze pass begins. This is intentional.
+**Two-model design:** `llava:7b` (pre-filter) and `qwen2.5vl:3b` (analyze) never coexist in VRAM — the pre-filter pass finishes completely before the analyze pass begins. This is intentional.
 
 **Pre-filter contract:** conservative, zero false negatives. A response containing "no" (word boundary) → `False`. A response containing "yes" (word boundary) → `True`. Anything else (ambiguous, error, empty) → `True`. This is implemented with `re.search(r"\byes\b")` / `re.search(r"\bno\b")` — do not simplify to substring matching (`"no" in response` would match "cannot").
 
