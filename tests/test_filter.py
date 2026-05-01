@@ -1,8 +1,14 @@
 from pathlib import Path
 from unittest.mock import patch
 import imagehash
+from PIL import Image
 from subtitles_ocr.models import Frame
-from subtitles_ocr.pipeline.filter import compute_groups, HASH_DISTANCE_THRESHOLD
+from subtitles_ocr.pipeline.filter import (
+    compute_groups,
+    compute_hash,
+    HASH_DISTANCE_THRESHOLD,
+    SUBTITLE_STRIP_RATIO,
+)
 
 HASH_A = imagehash.hex_to_hash("0" * 16)
 HASH_B = imagehash.hex_to_hash("f" * 16)
@@ -53,3 +59,27 @@ def test_representative_frame_is_first_of_group():
     with patch("subtitles_ocr.pipeline.filter.compute_hash", return_value=HASH_A):
         groups = compute_groups(frames)
     assert groups[0].frame == Path("000001.jpg")
+
+
+def test_compute_hash_sensitive_to_strip_changes(tmp_path):
+    frame_a = Image.new("RGB", (100, 100), color=(255, 255, 255))
+    frame_b = Image.new("RGB", (100, 100), color=(255, 255, 255))
+    black_strip = Image.new("RGB", (100, 20), color=(0, 0, 0))
+    frame_b.paste(black_strip, (0, 80))  # replace bottom 20px (bottom 20% of 100px)
+    path_a = tmp_path / "a.png"
+    path_b = tmp_path / "b.png"
+    frame_a.save(path_a)
+    frame_b.save(path_b)
+    assert compute_hash(path_a) != compute_hash(path_b)
+
+
+def test_compute_hash_ignores_middle_changes(tmp_path):
+    frame_a = Image.new("RGB", (100, 100), color=(255, 255, 255))
+    frame_b = Image.new("RGB", (100, 100), color=(255, 255, 255))
+    black_middle = Image.new("RGB", (100, 60), color=(0, 0, 0))
+    frame_b.paste(black_middle, (0, 20))  # rows 20–79, between top 20% and bottom 20%
+    path_a = tmp_path / "a.png"
+    path_b = tmp_path / "b.png"
+    frame_a.save(path_a)
+    frame_b.save(path_b)
+    assert compute_hash(path_a) == compute_hash(path_b)
