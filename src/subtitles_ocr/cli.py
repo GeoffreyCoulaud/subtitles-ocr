@@ -44,7 +44,7 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Distance pHash pour le groupement de frames (défaut: 10)")
 @click.option("--similarity-threshold", default=0.75, type=click.FloatRange(min=0.0, max=1.0),
               help="Seuil de similarité trigrame pour le regroupement flou (défaut: 0.75)")
-@click.option("--gap-tolerance", default=0.5, type=float,
+@click.option("--gap-tolerance", default=0.5, type=click.FloatRange(min=0.0),
               help="Tolérance de délai (secondes) entre événements similaires (défaut: 0.5)")
 @click.option("--reconcile-model", default="gemma3:1b-it-qat",
               help="Modèle Ollama pour la réconciliation de texte (défaut: gemma3:1b-it-qat)")
