@@ -4,7 +4,6 @@ from typing import Iterable
 from PIL import Image
 from subtitles_ocr.models import Frame, FrameGroup
 
-HASH_DISTANCE_THRESHOLD = 10
 SUBTITLE_STRIP_RATIO = 0.20
 
 
@@ -22,7 +21,7 @@ def compute_hash(frame_path: Path) -> imagehash.ImageHash:
 
 def compute_groups(
     frames: Iterable[Frame],
-    threshold: int = HASH_DISTANCE_THRESHOLD,
+    hash_distance: int = 10,
 ) -> list[FrameGroup]:
     frames_iter = iter(frames)
     first = next(frames_iter, None)
@@ -36,7 +35,7 @@ def compute_groups(
 
     for frame in frames_iter:
         frame_hash = compute_hash(frame.path)
-        if frame_hash - group_hash <= threshold:
+        if frame_hash - group_hash <= hash_distance:
             group_end = frame
         else:
             groups.append(FrameGroup(

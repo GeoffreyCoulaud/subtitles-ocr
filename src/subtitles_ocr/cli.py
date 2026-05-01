@@ -38,6 +38,8 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Modèle Ollama pour le pré-filtrage (défaut: moondream)")
 @click.option("--filter-workers", default=4, type=click.IntRange(min=1),
               help="Workers parallèles pour le pré-filtrage (défaut: 4)")
+@click.option("--hash-distance", default=10, type=click.IntRange(min=1),
+              help="Distance pHash pour le groupement de frames (défaut: 10)")
 @click.option("--debug", is_flag=True, default=False,
               help="Activer les logs de débogage (sorties des modèles VLM, etc.)")
 def cli(
@@ -47,6 +49,7 @@ def cli(
     model: str,
     filter_model: str,
     filter_workers: int,
+    hash_distance: int,
     debug: bool,
 ) -> None:
     """Extrait les sous-titres incrustés d'une vidéo anime et produit un fichier .ass."""
@@ -108,7 +111,8 @@ def cli(
         groups = [FrameGroup.model_validate_json(line) for line in _read_jsonl(groups_path)]
     else:
         groups = compute_groups(
-            tqdm(frames, desc="[2/6] Groupement pHash", total=len(frames), unit="frame")
+            tqdm(frames, desc="[2/6] Groupement pHash", total=len(frames), unit="frame"),
+            hash_distance=hash_distance,
         )
         with groups_path.open("w", encoding="utf-8") as f:
             for g in groups:

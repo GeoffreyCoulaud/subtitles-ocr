@@ -6,7 +6,6 @@ from subtitles_ocr.models import Frame
 from subtitles_ocr.pipeline.filter import (
     compute_groups,
     compute_hash,
-    HASH_DISTANCE_THRESHOLD,
     SUBTITLE_STRIP_RATIO,
 )
 
@@ -71,6 +70,13 @@ def test_compute_hash_sensitive_to_strip_changes(tmp_path):
     frame_a.save(path_a)
     frame_b.save(path_b)
     assert compute_hash(path_a) != compute_hash(path_b)
+
+
+def test_compute_groups_accepts_hash_distance_parameter():
+    frames = _frames(0.0)
+    with patch("subtitles_ocr.pipeline.filter.compute_hash", return_value=HASH_A):
+        groups = compute_groups(frames, hash_distance=10)
+    assert len(groups) == 1
 
 
 def test_compute_hash_ignores_middle_changes(tmp_path):
