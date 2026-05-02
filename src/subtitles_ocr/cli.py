@@ -52,6 +52,8 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Ollama model for text reconciliation (default: gemma3:1b-it-qat)")
 @click.option("--reconcile-workers", default=8, type=click.IntRange(min=1),
               help="Parallel workers for reconciliation (default: 8)")
+@click.option("--ollama-host", default="http://localhost:11434",
+              help="Base URL of the Ollama server or LiteLLM proxy (default: http://localhost:11434)")
 @click.option("--debug", is_flag=True, default=False,
               help="Enable debug logging (VLM model outputs, etc.)")
 def cli(
@@ -67,6 +69,7 @@ def cli(
     gap_tolerance: float,
     reconcile_model: str,
     reconcile_workers: int,
+    ollama_host: str,
     debug: bool,
 ) -> None:
     """Extract hardcoded subtitles from an anime video and produce a .ass file."""
@@ -145,7 +148,7 @@ def cli(
     remaining_for_filter = groups[n_filter_done:]
 
     if remaining_for_filter:
-        filter_client = OllamaClient(model=filter_model)
+        filter_client = OllamaClient(model=filter_model, host=ollama_host)
         mode = "a" if n_filter_done > 0 else "w"
         with filter_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
             for group, has_text in zip(
@@ -180,7 +183,7 @@ def cli(
     remaining_filter = filter_results[n_analysis_done:]
 
     if remaining_groups:
-        client = OllamaClient(model=model)
+        client = OllamaClient(model=model, host=ollama_host)
         mode = "a" if n_analysis_done > 0 else "w"
         with analysis_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
             for analysis in tqdm(
@@ -240,7 +243,7 @@ def cli(
     remaining_clusters = fuzzy_groups[n_reconciled_done:]
 
     if remaining_clusters:
-        reconcile_client = OllamaClient(model=reconcile_model)
+        reconcile_client = OllamaClient(model=reconcile_model, host=ollama_host)
         mode = "a" if n_reconciled_done > 0 else "w"
         with reconciled_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
             for event in tqdm(

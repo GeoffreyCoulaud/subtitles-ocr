@@ -166,3 +166,26 @@ def test_prefilter_writes_results_incrementally(tmp_path):
     # The 2 results yielded before the crash must be persisted
     filter_lines = _read_jsonl(workdir / "filter.jsonl")
     assert len(filter_lines) == 2
+
+
+def test_ollama_host_propagated_to_clients(tmp_path):
+    video, workdir = _minimal_workdir(tmp_path)
+    fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
+    (workdir / "groups.jsonl").write_text(json.dumps(fake_group) + "\n", encoding="utf-8")
+
+    with patch("subtitles_ocr.cli.OllamaClient") as MockClient, \
+         patch("subtitles_ocr.cli.prefilter_groups", return_value=iter([False])), \
+         patch("subtitles_ocr.cli.analyze_groups", return_value=iter([])), \
+         patch("subtitles_ocr.cli.group_events", return_value=[]), \
+         patch("subtitles_ocr.cli.fuzzy_group_events", return_value=[]), \
+         patch("subtitles_ocr.cli.build_ass_content", return_value=""):
+        runner = CliRunner()
+        runner.invoke(cli, [
+            str(video), "--workdir", str(workdir),
+            "--output", str(tmp_path / "out.ass"),
+            "--ollama-host", "http://proxy:4000",
+        ])
+
+    assert MockClient.call_count >= 1
+    for call in MockClient.call_args_list:
+        assert call.kwargs["host"] == "http://proxy:4000"
