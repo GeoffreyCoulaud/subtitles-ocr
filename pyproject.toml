@@ -10,7 +10,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "Pillow>=11.0",
-    "imagehash>=4.3",
     "pydantic>=2.0",
     "ollama>=0.4",
     "click>=8.0",

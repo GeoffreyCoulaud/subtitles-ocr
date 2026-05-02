@@ -42,8 +42,8 @@ def _read_jsonl(path: Path) -> list[str]:
 @click.option("--analyze-workers", default=1, type=click.IntRange(min=1),
               help="Workers parallèles pour l'analyse VLM (défaut: 1). "
                    "Valeurs > 1 requièrent OLLAMA_NUM_PARALLEL >= valeur dans l'env Ollama.")
-@click.option("--hash-distance", default=10, type=click.IntRange(min=0),
-              help="Distance pHash pour le groupement de frames (défaut: 10)")
+@click.option("--edge-diff-threshold", default=8.0, type=click.FloatRange(min=0.0),
+              help="Seuil de différence d'arêtes pour le groupement de frames (défaut: 8.0)")
 @click.option("--similarity-threshold", default=0.75, type=click.FloatRange(min=0.0, max=1.0),
               help="Seuil de similarité trigrame pour le regroupement flou (défaut: 0.75)")
 @click.option("--gap-tolerance", default=0.5, type=click.FloatRange(min=0.0),
@@ -62,7 +62,7 @@ def cli(
     filter_model: str,
     filter_workers: int,
     analyze_workers: int,
-    hash_distance: int,
+    edge_diff_threshold: float,
     similarity_threshold: float,
     gap_tolerance: float,
     reconcile_model: str,
@@ -124,14 +124,14 @@ def cli(
         video_info_path.write_text(video_info.model_dump_json(indent=2), encoding="utf-8")
         click.echo(f"      {len(frames)} frames extraites.")
 
-    # Étape 2 : filtrage pHash
+    # Étape 2 : groupement par similarité d'arêtes
     if groups_path.exists():
         click.echo("[2/8] Groupement ignoré (reprise).")
         groups = [FrameGroup.model_validate_json(line) for line in _read_jsonl(groups_path)]
     else:
         groups = compute_groups(
-            tqdm(frames, desc="[2/8] Groupement pHash", total=len(frames), unit="frame"),
-            hash_distance=hash_distance,
+            tqdm(frames, desc="[2/8] Groupement", total=len(frames), unit="frame"),
+            diff_threshold=edge_diff_threshold,
         )
         with groups_path.open("w", encoding="utf-8") as f:
             for g in groups:
