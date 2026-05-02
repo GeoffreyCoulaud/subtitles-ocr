@@ -77,6 +77,7 @@ def cli(
         logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s %(message)s")
         logging.getLogger("httpcore").setLevel(logging.WARNING)
         logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("openai").setLevel(logging.WARNING)
 
     if output is None:
         output = video.with_suffix(".ass")
