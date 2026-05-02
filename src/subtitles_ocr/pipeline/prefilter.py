@@ -23,7 +23,7 @@ def prefilter_groups(
     def classify(group: FrameGroup) -> bool:
         nonlocal error_count
         try:
-            response = client.analyze(group.frame, prompt, options={"num_predict": 10})
+            response = client.analyze(group.frame, prompt)
             low = response.lower()
             if re.search(r"\byes\b", low):
                 log.debug("prefilter [%s] → YES | %r", group.frame.name, response)

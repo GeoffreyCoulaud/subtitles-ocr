@@ -66,3 +66,11 @@ def test_order_preserved_with_multiple_workers():
 def test_empty_groups_returns_empty():
     client = MagicMock()
     assert list(prefilter_groups([], client, "p", workers=4)) == []
+
+
+def test_analyze_called_without_options():
+    client = MagicMock()
+    client.analyze.return_value = "yes"
+    group = _group()
+    list(prefilter_groups([group], client, "prompt text", workers=1))
+    client.analyze.assert_called_once_with(group.frame, "prompt text")
