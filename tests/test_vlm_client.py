@@ -4,26 +4,34 @@ from unittest.mock import patch, MagicMock
 from subtitles_ocr.vlm.client import OllamaClient
 
 
-def test_analyze_passes_image_and_prompt():
+def _make_response(content: str | None) -> MagicMock:
+    mock_choice = MagicMock()
+    mock_choice.message.content = content
     mock_response = MagicMock()
-    mock_response.message.content = '[]'
-    with patch("subtitles_ocr.vlm.client.ollama.chat", return_value=mock_response) as mock_chat:
+    mock_response.choices = [mock_choice]
+    return mock_response
+
+
+def test_analyze_passes_image_and_prompt():
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.return_value = _make_response("[]")
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
         with patch.object(Path, "read_bytes", return_value=b"image_data"):
             client = OllamaClient(model="test-model")
             result = client.analyze(Path("frame.jpg"), "my prompt")
 
     assert result == "[]"
-    call_args = mock_chat.call_args
+    call_args = mock_openai.chat.completions.create.call_args
     assert call_args.kwargs["model"] == "test-model"
-    messages = call_args.kwargs["messages"]
-    assert messages[0]["content"] == "my prompt"
-    assert "images" in messages[0]
+    content_parts = call_args.kwargs["messages"][0]["content"]
+    assert content_parts[0]["text"] == "my prompt"
+    assert content_parts[1]["type"] == "image_url"
 
 
 def test_analyze_returns_raw_string():
-    mock_response = MagicMock()
-    mock_response.message.content = '[{"text": "Bonjour"}]'
-    with patch("subtitles_ocr.vlm.client.ollama.chat", return_value=mock_response):
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.return_value = _make_response('[{"text": "Bonjour"}]')
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
         with patch.object(Path, "read_bytes", return_value=b"image_data"):
             client = OllamaClient(model="test-model")
             result = client.analyze(Path("frame.jpg"), "prompt")
@@ -31,9 +39,9 @@ def test_analyze_returns_raw_string():
 
 
 def test_analyze_raises_on_none_content():
-    mock_response = MagicMock()
-    mock_response.message.content = None
-    with patch("subtitles_ocr.vlm.client.ollama.chat", return_value=mock_response):
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.return_value = _make_response(None)
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
         with patch.object(Path, "read_bytes", return_value=b"image_data"):
             client = OllamaClient(model="test-model")
             with pytest.raises(RuntimeError, match="no text content"):
@@ -41,42 +49,45 @@ def test_analyze_raises_on_none_content():
 
 
 def test_chat_returns_text_response():
-    mock_response = MagicMock()
-    mock_response.message.content = "Bonjour tout le monde"
-    with patch("subtitles_ocr.vlm.client.ollama.chat", return_value=mock_response) as mock_chat:
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.return_value = _make_response("Bonjour tout le monde")
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
         client = OllamaClient(model="test-model")
         result = client.chat("prompt text", system="system text")
     assert result == "Bonjour tout le monde"
-    messages = mock_chat.call_args.kwargs["messages"]
+    messages = mock_openai.chat.completions.create.call_args.kwargs["messages"]
     assert messages[0] == {"role": "system", "content": "system text"}
     assert messages[1] == {"role": "user", "content": "prompt text"}
 
 
 def test_chat_retries_on_failure_then_succeeds():
-    ok_response = MagicMock()
-    ok_response.message.content = "success"
-    with patch("subtitles_ocr.vlm.client.ollama.chat",
-               side_effect=[Exception("timeout"), ok_response]) as mock_chat:
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.side_effect = [
+        Exception("timeout"),
+        _make_response("success"),
+    ]
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
         client = OllamaClient(model="test-model")
         result = client.chat("prompt", system="system", retries=3)
     assert result == "success"
-    assert mock_chat.call_count == 2
+    assert mock_openai.chat.completions.create.call_count == 2
 
 
 def test_chat_raises_after_all_retries_exhausted():
-    with patch("subtitles_ocr.vlm.client.ollama.chat", side_effect=Exception("always fails")) as mock_chat:
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.side_effect = Exception("always fails")
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
         client = OllamaClient(model="test-model")
         with pytest.raises(RuntimeError, match="always fails"):
             client.chat("prompt", system="system", retries=3)
-    assert mock_chat.call_count == 3
+    assert mock_openai.chat.completions.create.call_count == 3
 
 
 def test_chat_raises_on_empty_content():
-    mock_response = MagicMock()
-    mock_response.message.content = None
-    with patch("subtitles_ocr.vlm.client.ollama.chat",
-               side_effect=[mock_response, mock_response]) as mock_chat:
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.return_value = _make_response(None)
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
         client = OllamaClient(model="test-model")
         with pytest.raises(RuntimeError, match="no text content"):
             client.chat("prompt", system="system", retries=2)
-    assert mock_chat.call_count == 2
+    assert mock_openai.chat.completions.create.call_count == 2

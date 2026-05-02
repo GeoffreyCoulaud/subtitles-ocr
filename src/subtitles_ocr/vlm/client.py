@@ -1,32 +1,37 @@
+import base64
 import logging
-import ollama
 from pathlib import Path
+
+from openai import OpenAI
 
 log = logging.getLogger(__name__)
 
 
 class OllamaClient:
-    def __init__(self, model: str):
+    def __init__(self, model: str, host: str = "http://localhost:11434"):
         self.model = model
+        self._client = OpenAI(base_url=f"{host}/v1", api_key="ollama")
 
-    def analyze(self, image_path: Path, prompt: str, options: dict | None = None) -> str:
+    def analyze(self, image_path: Path, prompt: str) -> str:
         try:
             image_data = image_path.read_bytes()
         except OSError as e:
             raise RuntimeError(f"Cannot read image {image_path}: {e}") from e
+        b64 = base64.b64encode(image_data).decode()
         try:
-            response = ollama.chat(
+            response = self._client.chat.completions.create(
                 model=self.model,
                 messages=[{
                     "role": "user",
-                    "content": prompt,
-                    "images": [image_data],
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                    ],
                 }],
-                options=options,
             )
         except Exception as e:
             raise RuntimeError(f"Ollama VLM call failed ({self.model}): {e}") from e
-        content = response.message.content
+        content = response.choices[0].message.content
         if not content:
             log.debug("Empty response from %s — full response: %r", self.model, response)
             raise RuntimeError(f"Ollama returned no text content ({self.model})")
@@ -36,14 +41,14 @@ class OllamaClient:
         last_error: Exception | None = None
         for attempt in range(max(1, retries)):
             try:
-                response = ollama.chat(
+                response = self._client.chat.completions.create(
                     model=self.model,
                     messages=[
                         {"role": "system", "content": system},
                         {"role": "user", "content": prompt},
                     ],
                 )
-                content = response.message.content
+                content = response.choices[0].message.content
                 if not content:
                     log.debug("Empty response from %s — full response: %r", self.model, response)
                     raise RuntimeError(f"Ollama returned no text content ({self.model})")
