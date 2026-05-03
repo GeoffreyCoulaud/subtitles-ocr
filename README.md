@@ -47,21 +47,9 @@ cd subtitles-ocr
 uv sync
 ```
 
-### Pull the VLM models
+### Inference server
 
-The pipeline uses three models. The two vision models never coexist in VRAM:
-
-- **Pre-filter** (`llava:7b`, 4.7 GB) — fast yes/no pass to skip frames with no text
-- **Analysis** (`qwen2.5vl:3b`, 3.2 GB) — full subtitle extraction on frames that passed the pre-filter
-- **Reconciliation** (`gemma3:1b-it-qat`, 1.0 GB) — text-only model that merges OCR variations across frames into clean subtitle text
-
-```bash
-ollama pull llava:7b
-ollama pull qwen2.5vl:3b
-ollama pull gemma3:1b-it-qat
-```
-
-All three can be overridden with `--filter-model`, `--model`, and `--reconcile-model`. Make sure Ollama is running before invoking the tool.
+The pipeline requires three VLM models. See [docs/inference-setup.md](docs/inference-setup.md) for model details and how to configure local Ollama, a remote machine, or a multi-machine LiteLLM proxy.
 
 ## Usage
 
@@ -101,5 +89,5 @@ uv run subtitles-ocr episode01.mkv -o subs/episode01.ass -m llava:13b
 ## Documentation
 
 - [Install, test, and run commands](docs/development.md)
-- [Distributed inference — remote Ollama or LiteLLM proxy across multiple machines](docs/distributed-inference.md)
+- [Inference setup — local Ollama, remote machine, or LiteLLM proxy](docs/inference-setup.md)
 - [Example frames showing supported subtitle types](docs/examples/README.md)

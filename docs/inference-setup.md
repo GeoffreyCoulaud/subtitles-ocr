@@ -1,8 +1,31 @@
-# Distributed inference
+# Inference setup
 
-By default the tool talks to a local Ollama instance at `http://localhost:11434`. Pass `--ollama-host` to point it at any OpenAI-compatible endpoint — another machine running Ollama, or a [LiteLLM](https://github.com/BerriAI/litellm) proxy that fans out to multiple machines.
+The pipeline uses three models. The two vision models never coexist in VRAM — each step completes before the next model loads:
 
-## Single remote machine
+| Role | Model | VRAM |
+|------|-------|------|
+| Pre-filter | `llava:7b` | 4.7 GB |
+| Analysis | `qwen2.5vl:3b` | 3.2 GB |
+| Reconciliation | `gemma3:1b-it-qat` | 1.0 GB |
+
+All three can be overridden with `--filter-model`, `--model`, and `--reconcile-model`.
+
+The tool talks to any OpenAI-compatible inference server via `--ollama-host` (default: `http://localhost:11434`).
+
+## Local Ollama
+
+```bash
+ollama pull llava:7b
+ollama pull qwen2.5vl:3b
+ollama pull gemma3:1b-it-qat
+ollama serve
+```
+
+```bash
+uv run subtitles-ocr episode01.mkv
+```
+
+## Remote Ollama
 
 ```bash
 uv run subtitles-ocr episode01.mkv --ollama-host http://gpu-server:11434
