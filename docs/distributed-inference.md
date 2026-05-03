@@ -15,7 +15,8 @@ LiteLLM proxy runs as a standalone service (not part of this codebase). It route
 **Install and start the proxy:**
 
 ```bash
-pip install litellm
+# The official docs omit --with pillow, but pillow is required at runtime
+uv tool install 'litellm[proxy]' --with pillow
 litellm --config litellm.yaml
 ```
 
