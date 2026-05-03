@@ -65,7 +65,7 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 |--------------------------|--------------------------|-------------------------------------------------------------------------------------------------|
 | `-o`, `--output`         | `<video>.ass`            | Path to the output `.ass` file                                                                  |
 | `-w`, `--workdir`        | `<video>_subtitles_ocr/` | Directory for intermediate files                                                                |
-| `-m`, `--analyze-model`  | `qwen2.5vl:3b`           | Model for VLM analysis                                                                          |
+| `--analyze-model`        | `qwen2.5vl:3b`           | Model for VLM analysis                                                                          |
 | `--filter-model`         | `llava:7b`               | Ollama model for the pre-filter pass                                                            |
 | `--filter-workers`       | `4`                      | Parallel workers for the pre-filter pass                                                        |
 | `--analyze-workers`      | `1`                      | Parallel workers for the analysis pass (requires `OLLAMA_NUM_PARALLEL` ≥ value in Ollama's env) |
@@ -83,7 +83,7 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 uv run subtitles-ocr episode01.mkv
 
 # Custom output path and model
-uv run subtitles-ocr episode01.mkv -o subs/episode01.ass -m llava:13b
+uv run subtitles-ocr episode01.mkv -o subs/episode01.ass --analyze-model llava:13b
 ```
 
 ## Documentation

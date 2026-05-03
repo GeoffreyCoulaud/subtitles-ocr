@@ -33,7 +33,7 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Path to the output .ass file (default: <video>.ass)")
 @click.option("--workdir", "-w", type=click.Path(path_type=Path), default=None,
               help="Working directory for intermediate files")
-@click.option("--analyze-model", "-m", default="qwen2.5vl:3b",
+@click.option("--analyze-model", default="qwen2.5vl:3b",
               help="Model for VLM analysis (default: qwen2.5vl:3b)")
 @click.option("--filter-model", default="llava:7b",
               help="Ollama model for pre-filtering (default: llava:7b)")
