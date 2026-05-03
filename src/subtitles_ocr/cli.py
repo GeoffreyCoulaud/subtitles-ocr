@@ -33,8 +33,8 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Path to the output .ass file (default: <video>.ass)")
 @click.option("--workdir", "-w", type=click.Path(path_type=Path), default=None,
               help="Working directory for intermediate files")
-@click.option("--model", "-m", default="qwen2.5vl:3b",
-              help="Ollama model for analysis (default: qwen2.5vl:3b)")
+@click.option("--analyze-model", "-m", default="qwen2.5vl:3b",
+              help="Model for VLM analysis (default: qwen2.5vl:3b)")
 @click.option("--filter-model", default="llava:7b",
               help="Ollama model for pre-filtering (default: llava:7b)")
 @click.option("--filter-workers", default=4, type=click.IntRange(min=1),
@@ -60,7 +60,7 @@ def cli(
     video: Path,
     output: Path | None,
     workdir: Path | None,
-    model: str,
+    analyze_model: str,
     filter_model: str,
     filter_workers: int,
     analyze_workers: int,
@@ -184,13 +184,13 @@ def cli(
     remaining_filter = filter_results[n_analysis_done:]
 
     if remaining_groups:
-        client = OllamaClient(model=model, host=inference_url)
+        client = OllamaClient(model=analyze_model, host=inference_url)
         mode = "a" if n_analysis_done > 0 else "w"
         with analysis_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
             for analysis in tqdm(
                 analyze_groups(remaining_groups, remaining_filter, client, SYSTEM_PROMPT, analyze_workers),
                 total=len(remaining_groups),
-                desc=f"[4/8] VLM analysis ({model})",
+                desc=f"[4/8] VLM analysis ({analyze_model})",
                 unit="group",
             ):
                 f.write(analysis.model_dump_json() + "\n")

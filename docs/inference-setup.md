@@ -8,7 +8,7 @@ The pipeline uses three models. The two vision models never coexist in VRAM — 
 | Analysis | `qwen2.5vl:3b` | 3.2 GB |
 | Reconciliation | `gemma3:1b-it-qat` | 1.0 GB |
 
-All three can be overridden with `--filter-model`, `--model`, and `--reconcile-model`.
+All three can be overridden with `--filter-model`, `--analyze-model`, and `--reconcile-model`.
 
 The tool talks to any OpenAI-compatible inference server via `--inference-url` (default: `http://localhost:11434`).
 
@@ -75,7 +75,7 @@ model_list:
       model: ollama/gemma3:1b-it-qat
       api_base: http://small-machine:11434
 
-  # catch-all: any custom model (--model, --filter-model, --reconcile-model)
+  # catch-all: any custom model (--analyze-model, --filter-model, --reconcile-model)
   # not listed above is forwarded to the main machine as-is
   - model_name: "*"
     litellm_params:
