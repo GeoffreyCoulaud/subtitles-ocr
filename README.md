@@ -36,7 +36,7 @@ Each step writes its output to the work directory, named `NNN-<file>` where `NNN
 
 - **[uv](https://docs.astral.sh/uv/)** — manages Python and dependencies
 - **[ffmpeg](https://ffmpeg.org/download.html)** — used to extract frames and read video metadata
-- **An OpenAI-compatible inference server** — [Ollama](https://ollama.com) is the recommended option; see [distributed inference](docs/distributed-inference.md) for remote setups
+- **An OpenAI-compatible inference server** — [Ollama](https://ollama.com) is the recommended option; see [inference setup](docs/inference-setup.md) for remote setups
 
 ### Install
 
@@ -73,6 +73,7 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 | `--analyze-workers`      | `1`                      | Parallel workers for VLM analysis (requires `OLLAMA_NUM_PARALLEL` ≥ value in Ollama's env) |
 | `--reconcile-model`      | `gemma3:1b-it-qat`       | Model for text reconciliation                                                              |
 | `--reconcile-workers`    | `8`                      | Parallel workers for reconciliation                                                        |
+| `--litellm-config`       | —                        | Path to a `litellm.yaml`; auto-derives worker counts per model from `max_parallel_requests` (overridden by explicit `--*-workers` flags) |
 | `--edge-diff-threshold`  | `8.0`                    | Edge difference threshold for frame grouping                                               |
 | `--similarity-threshold` | `0.75`                   | Trigram similarity threshold for fuzzy event grouping                                      |
 | `--gap-tolerance`        | `0.5`                    | Max gap in seconds to bridge between similar events                                        |

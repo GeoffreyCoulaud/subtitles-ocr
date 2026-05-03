@@ -55,25 +55,30 @@ model_list:
     litellm_params:
       model: ollama/llava:7b
       api_base: http://big-machine:11434
+      max_parallel_requests: 2
 
   # smaller models can run on all machines
   - model_name: qwen2.5vl:3b
     litellm_params:
       model: ollama/qwen2.5vl:3b
       api_base: http://big-machine:11434
+      max_parallel_requests: 2
   - model_name: qwen2.5vl:3b
     litellm_params:
       model: ollama/qwen2.5vl:3b
       api_base: http://small-machine:11434
+      max_parallel_requests: 2
 
   - model_name: gemma3:1b-it-qat
     litellm_params:
       model: ollama/gemma3:1b-it-qat
       api_base: http://big-machine:11434
+      max_parallel_requests: 8
   - model_name: gemma3:1b-it-qat
     litellm_params:
       model: ollama/gemma3:1b-it-qat
       api_base: http://small-machine:11434
+      max_parallel_requests: 4
 
   # catch-all: any custom model (--analyze-model, --filter-model, --reconcile-model)
   # not listed above is forwarded to the main machine as-is
@@ -88,5 +93,19 @@ model_list:
 ```bash
 uv run subtitles-ocr episode01.mkv --inference-url http://localhost:4000
 ```
+
+**Auto-detect worker counts with `--litellm-config`:**
+
+Pass the same config file to the tool and it will sum `max_parallel_requests` across all backends for each model, using the result as the number of parallel workers:
+
+```bash
+uv run subtitles-ocr episode01.mkv \
+  --inference-url http://localhost:4000 \
+  --litellm-config litellm.yaml
+```
+
+With the example above, this sets `--reconcile-workers 12` (8 + 4) and `--filter-workers 2` automatically. Explicit `--*-workers` flags always take priority over the auto-detected value.
+
+Every backend for a model used by the pipeline must declare `max_parallel_requests` — the tool raises an error if any entry is missing it.
 
 Each machine must have the relevant models pulled (`ollama pull <model>`) before the proxy starts routing to it.
