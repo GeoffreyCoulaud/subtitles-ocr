@@ -17,16 +17,16 @@ Original text positions should not be altered. This is a pure extraction program
 
 The pipeline runs 8 sequential steps. Every step writes its output to the work directory, so interrupted runs resume from the last completed step — delete an intermediate file to rerun from that point.
 
-| Step | Name         | Output                             | Description                                                                                                                                       |
-|------|--------------|------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1    | Extract      | `manifest.json`, `video_info.json` | ffmpeg extracts every frame at native FPS                                                                                                         |
-| 2    | pHash filter | `groups.jsonl`                     | Consecutive frames with an identical perceptual hash are collapsed into one group                                                                 |
-| 3    | Pre-filter   | `filter.jsonl`                     | `llava:7b` classifies each group as containing text or not — fast binary pass to skip blank frames                                                |
-| 4    | Analyze      | `analysis.jsonl`                   | `qwen2.5vl:3b` extracts text, style, color, position, and alignment from each text-bearing group                                                  |
-| 5    | Group events | `events.json`                      | Consecutive identical analyses are merged into subtitle events                                                                                    |
-| 6    | Fuzzy group  | `fuzzy_groups.jsonl`               | Similar events are clustered using trigram similarity; short gaps between similar events are bridged                                              |
-| 7    | Reconcile    | `reconciled.jsonl`                 | Each cluster is collapsed into one canonical event — `gemma3:1b-it-qat` reconciles noisy text readings; majority vote picks style/color/alignment |
-| 8    | Serialize    | `<output>.ass`                     | The reconciled events are written to an ASS subtitle file                                                                                         |
+| Step | Name         | Output                                         | Description                                                                                                                                       |
+|------|--------------|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1    | Extract      | `001-manifest.json`, `001-video_info.json`     | ffmpeg extracts every frame at native FPS                                                                                                         |
+| 2    | pHash filter | `002-groups.jsonl`                             | Consecutive frames with an identical perceptual hash are collapsed into one group                                                                 |
+| 3    | Pre-filter   | `003-filter.jsonl`                             | `llava:7b` classifies each group as containing text or not — fast binary pass to skip blank frames                                                |
+| 4    | Analyze      | `004-analysis.jsonl`                           | `qwen2.5vl:3b` extracts text, style, color, position, and alignment from each text-bearing group                                                  |
+| 5    | Group events | `005-events.json`                              | Consecutive identical analyses are merged into subtitle events                                                                                    |
+| 6    | Fuzzy group  | `006-fuzzy_groups.jsonl`                       | Similar events are clustered using trigram similarity; short gaps between similar events are bridged                                              |
+| 7    | Reconcile    | `007-reconciled.jsonl`                         | Each cluster is collapsed into one canonical event — `gemma3:1b-it-qat` reconciles noisy text readings; majority vote picks style/color/alignment |
+| 8    | Serialize    | `<output>.ass`                                 | The reconciled events are written to an ASS subtitle file                                                                                         |
 
 ## Setup
 
