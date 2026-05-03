@@ -85,17 +85,13 @@ def cli(
         workdir = video.parent / (video.stem + "_subtitles_ocr")
 
     workdir.mkdir(parents=True, exist_ok=True)
-    frames_dir = workdir / "frames"
-    manifest_path = workdir / "manifest.json"
-    video_info_path = workdir / "video_info.json"
-    groups_path = workdir / "groups.jsonl"
-    filter_path = workdir / "filter.jsonl"
-    analysis_path = workdir / "analysis.jsonl"
-    events_path = workdir / "events.json"
-    fuzzy_groups_path = workdir / "fuzzy_groups.jsonl"
-    reconciled_path = workdir / "reconciled.jsonl"
+    step = 0
 
     # Step 1: extraction
+    step += 1
+    frames_dir = workdir / f"{step:03d}-frames"
+    manifest_path = workdir / f"{step:03d}-manifest.json"
+    video_info_path = workdir / f"{step:03d}-video_info.json"
     if manifest_path.exists() and video_info_path.exists():
         click.echo("[1/8] Extraction skipped (resuming).")
         frames = [Frame.model_validate(f) for f in json.loads(manifest_path.read_text(encoding="utf-8"))]
@@ -129,6 +125,8 @@ def cli(
         click.echo(f"      {len(frames)} frames extracted.")
 
     # Step 2: edge-similarity grouping
+    step += 1
+    groups_path = workdir / f"{step:03d}-groups.jsonl"
     if groups_path.exists():
         click.echo("[2/8] Grouping skipped (resuming).")
         groups = [FrameGroup.model_validate_json(line) for line in _read_jsonl(groups_path)]
@@ -143,6 +141,8 @@ def cli(
         click.echo(f"      {len(groups)} groups found.")
 
     # Step 3: VLM pre-filtering
+    step += 1
+    filter_path = workdir / f"{step:03d}-filter.jsonl"
     filter_lines = _read_jsonl(filter_path)
     filter_results: list[bool] = [json.loads(line)["has_text"] for line in filter_lines]
     n_filter_done = len(filter_results)
@@ -169,6 +169,8 @@ def cli(
         click.echo("[3/8] Pre-filtering skipped (resuming).")
 
     # Step 4: VLM analysis
+    step += 1
+    analysis_path = workdir / f"{step:03d}-analysis.jsonl"
     assert len(filter_results) == len(groups), (
         f"filter.jsonl has {len(filter_results)} entries but groups.jsonl has "
         f"{len(groups)} — delete filter.jsonl to rerun pre-filtering."
@@ -199,6 +201,8 @@ def cli(
         click.echo("[4/8] Analysis skipped (resuming).")
 
     # Step 5: temporal grouping
+    step += 1
+    events_path = workdir / f"{step:03d}-events.json"
     if events_path.exists():
         click.echo("[5/8] Temporal grouping skipped (resuming).")
         events = [
@@ -215,6 +219,8 @@ def cli(
         click.echo(f"      {len(events)} events.")
 
     # Step 6: fuzzy grouping
+    step += 1
+    fuzzy_groups_path = workdir / f"{step:03d}-fuzzy_groups.jsonl"
     if fuzzy_groups_path.exists():
         click.echo("[6/8] Fuzzy grouping skipped (resuming).")
         fuzzy_groups = [
@@ -234,6 +240,8 @@ def cli(
         click.echo(f"      {len(fuzzy_groups)} fuzzy groups.")
 
     # Step 7: reconciliation
+    step += 1
+    reconciled_path = workdir / f"{step:03d}-reconciled.jsonl"
     reconciled_lines = _read_jsonl(reconciled_path)
     reconciled: list[SubtitleEvent] = [SubtitleEvent.model_validate_json(line) for line in reconciled_lines]
     n_reconciled_done = len(reconciled)
