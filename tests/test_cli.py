@@ -168,7 +168,7 @@ def test_prefilter_writes_results_incrementally(tmp_path):
     assert len(filter_lines) == 2
 
 
-def test_ollama_host_propagated_to_clients(tmp_path):
+def test_inference_url_propagated_to_clients(tmp_path):
     video, workdir = _minimal_workdir(tmp_path)
     fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
     (workdir / "groups.jsonl").write_text(json.dumps(fake_group) + "\n", encoding="utf-8")
@@ -183,7 +183,7 @@ def test_ollama_host_propagated_to_clients(tmp_path):
         runner.invoke(cli, [
             str(video), "--workdir", str(workdir),
             "--output", str(tmp_path / "out.ass"),
-            "--ollama-host", "http://proxy:4000",
+            "--inference-url", "http://proxy:4000",
         ])
 
     assert MockClient.call_count >= 1

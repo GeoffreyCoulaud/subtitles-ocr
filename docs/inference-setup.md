@@ -10,7 +10,7 @@ The pipeline uses three models. The two vision models never coexist in VRAM — 
 
 All three can be overridden with `--filter-model`, `--model`, and `--reconcile-model`.
 
-The tool talks to any OpenAI-compatible inference server via `--ollama-host` (default: `http://localhost:11434`).
+The tool talks to any OpenAI-compatible inference server via `--inference-url` (default: `http://localhost:11434`).
 
 ## Local Ollama
 
@@ -28,7 +28,7 @@ uv run subtitles-ocr episode01.mkv
 ## Remote Ollama
 
 ```bash
-uv run subtitles-ocr episode01.mkv --ollama-host http://gpu-server:11434
+uv run subtitles-ocr episode01.mkv --inference-url http://gpu-server:11434
 ```
 
 ## Multiple machines with LiteLLM proxy
@@ -86,7 +86,7 @@ model_list:
 **Point the tool at the proxy:**
 
 ```bash
-uv run subtitles-ocr episode01.mkv --ollama-host http://localhost:4000
+uv run subtitles-ocr episode01.mkv --inference-url http://localhost:4000
 ```
 
 Each machine must have the relevant models pulled (`ollama pull <model>`) before the proxy starts routing to it.

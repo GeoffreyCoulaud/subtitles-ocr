@@ -74,7 +74,7 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 | `--gap-tolerance`        | `0.5`                    | Max gap in seconds to bridge between similar events                                             |
 | `--reconcile-model`      | `gemma3:1b-it-qat`       | Ollama model for text reconciliation                                                            |
 | `--reconcile-workers`    | `8`                      | Parallel workers for reconciliation                                                             |
-| `--ollama-host`          | `http://localhost:11434` | Base URL of the Ollama server or LiteLLM proxy                                                  |
+| `--inference-url`        | `http://localhost:11434` | Base URL of the OpenAI-compatible inference server                                              |
 
 ### Example
 
