@@ -105,3 +105,40 @@ def test_wildcard_not_counted(tmp_path):
     ])
     with pytest.raises(ValueError, match="No backends found for model 'gemma3:1b-it-qat'"):
         get_workers_from_litellm(config, "gemma3:1b-it-qat")
+
+
+def test_empty_config_raises(tmp_path):
+    config = tmp_path / "litellm.yaml"
+    config.write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match="empty or not a YAML mapping"):
+        get_workers_from_litellm(config, "llava:7b")
+
+
+def test_max_parallel_requests_must_be_integer(tmp_path):
+    config = _write_config(tmp_path, [
+        {
+            "model_name": "llava:7b",
+            "litellm_params": {
+                "model": "ollama/llava:7b",
+                "api_base": "http://localhost:11434",
+                "max_parallel_requests": "four",
+            },
+        },
+    ])
+    with pytest.raises(ValueError, match="invalid max_parallel_requests"):
+        get_workers_from_litellm(config, "llava:7b")
+
+
+def test_max_parallel_requests_must_be_positive(tmp_path):
+    config = _write_config(tmp_path, [
+        {
+            "model_name": "llava:7b",
+            "litellm_params": {
+                "model": "ollama/llava:7b",
+                "api_base": "http://localhost:11434",
+                "max_parallel_requests": -1,
+            },
+        },
+    ])
+    with pytest.raises(ValueError, match="invalid max_parallel_requests"):
+        get_workers_from_litellm(config, "llava:7b")
