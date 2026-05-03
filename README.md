@@ -53,7 +53,7 @@ The pipeline uses three models. The two vision models never coexist in VRAM:
 
 - **Pre-filter** (`llava:7b`, 4.7 GB) — fast yes/no pass to skip frames with no text
 - **Analysis** (`qwen2.5vl:3b`, 3.2 GB) — full subtitle extraction on frames that passed the pre-filter
-- **Reconciliation** (`gemma3:1b-it-qat`, ~300 MB) — text-only model that merges OCR variations across frames into clean subtitle text
+- **Reconciliation** (`gemma3:1b-it-qat`, 1.0 GB) — text-only model that merges OCR variations across frames into clean subtitle text
 
 ```bash
 ollama pull llava:7b
