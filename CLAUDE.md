@@ -13,6 +13,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`uv run python -m pytest`, never `uv run pytest`.** `uv run pytest` may invoke a system-level pytest instead of the project's own.
 - **Never run a script that only prints to verify reasoning.** A `python -c` (or any script) containing only `print()` statements narrates a conclusion — it does not verify anything. Real verification means executing the code under test and asserting on its behavior. All verification belongs in `tests/` as pytest tests with `assert`. This rule applies to subagents (e.g. code-reviewer) too.
 - **Keep `README.md` up to date.** Any change that affects documented behavior — pipeline steps, model names or sizes, CLI options, intermediate file names — must be reflected in the README in the same commit.
+- **Skip spec review for TDD tasks.** Passing tests prove spec compliance — a separate spec review is redundant.
+- **Code quality review is only required when the task produces executable logic** (functions, branches, conditionals). Skip it for dependency additions, doc-only edits, renames, and config-only changes.
 
 ## Commands
 
