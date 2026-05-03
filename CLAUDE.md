@@ -16,24 +16,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-```bash
-# Install dependencies
-uv sync
+See [docs/development.md](docs/development.md) for install, test, and run commands.
 
-# Run all tests
-uv run python -m pytest
-
-# Run a single test file
-uv run python -m pytest tests/test_prefilter.py
-
-# Run a single test
-uv run python -m pytest tests/test_prefilter.py::test_yes_response_returns_true
-
-# Run the CLI
-uv run subtitles-ocr <video.mkv>
-```
-
-**Important:** always use `uv run python -m pytest`, never `uv run pytest`. The system has Python 3.14 which conflicts with the venv Python 3.12 — `uv run pytest` picks up the wrong interpreter.
+**Critical:** always use `uv run python -m pytest`, never `uv run pytest`. The system Python 3.14 shadows the venv Python 3.12 — `uv run pytest` picks up the wrong interpreter.
 
 `docs/superpowers/` is gitignored (specs and plans from brainstorming sessions).
 

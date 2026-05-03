@@ -81,7 +81,7 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 | `--filter-model` | `llava:7b` | Ollama model for the pre-filter pass |
 | `--filter-workers` | `4` | Parallel workers for the pre-filter pass |
 | `--analyze-workers` | `1` | Parallel workers for the analysis pass (requires `OLLAMA_NUM_PARALLEL` ≥ value in Ollama's env) |
-| `--hash-distance` | `10` | pHash distance threshold for frame grouping |
+| `--edge-diff-threshold` | `8.0` | Edge difference threshold for frame grouping |
 | `--similarity-threshold` | `0.75` | Trigram similarity threshold for fuzzy event grouping |
 | `--gap-tolerance` | `0.5` | Max gap in seconds to bridge between similar events |
 | `--reconcile-model` | `gemma3:1b-it-qat` | Ollama model for text reconciliation |
@@ -104,10 +104,4 @@ See [docs/distributed-inference.md](docs/distributed-inference.md) for how to po
 
 ## Development
 
-```bash
-# Install with dev dependencies
-uv sync --extra dev
-
-# Run tests
-uv run python -m pytest
-```
+See [docs/development.md](docs/development.md) for install, test, and run commands.
