@@ -15,6 +15,11 @@ def parse_elements(raw: str) -> list[SubtitleElement]:
     except json.JSONDecodeError:
         log.warning("parse_elements: invalid JSON: %r", raw)
         return []
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        log.warning("parse_elements: unexpected type %s: %r", type(data).__name__, raw)
+        return []
     result = []
     for item in data:
         try:

@@ -44,6 +44,18 @@ def test_parse_elements_multiple():
     assert elements[1].text == "Au revoir"
 
 
+def test_parse_elements_single_object():
+    raw = json.dumps(VALID_ELEMENT)
+    elements = parse_elements(raw)
+    assert len(elements) == 1
+    assert elements[0].text == "Bonjour"
+
+
+def test_parse_elements_unexpected_type_returns_empty():
+    elements = parse_elements('"just a string"')
+    assert elements == []
+
+
 def test_parse_elements_partial_invalid_keeps_valid():
     invalid_element = {"text": "Bad"}  # missing required fields: style, color, etc.
     raw = json.dumps([VALID_ELEMENT, invalid_element])
