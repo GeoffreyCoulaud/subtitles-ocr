@@ -72,7 +72,7 @@ def _resolve_workers(model: str, explicit: int | None, config: Path | None, defa
               help="Gap tolerance (seconds) between similar events (default: 0.5)")
 @click.option("--inference-url", default="http://localhost:11434",
               help="Base URL of the OpenAI-compatible inference server (default: http://localhost:11434)")
-@click.option("--litellm-config", default=None, type=click.Path(exists=True, path_type=Path),
+@click.option("--litellm-config", default=None, type=click.Path(exists=True, dir_okay=False, path_type=Path),
               help="Path to a litellm.yaml; auto-derives worker counts per model "
                    "(overrides defaults, overridden by explicit --*-workers flags)")
 @click.option("--debug", is_flag=True, default=False,

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from click.testing import CliRunner
-from subtitles_ocr.cli import _read_jsonl, cli
+from subtitles_ocr.cli import _read_jsonl, cli, _resolve_workers, FILTER_WORKERS_DEFAULT
 from subtitles_ocr.models import FrameAnalysis
 
 
@@ -189,3 +189,23 @@ def test_inference_url_propagated_to_clients(tmp_path):
     assert MockClient.call_count >= 1
     for call in MockClient.call_args_list:
         assert call.kwargs["host"] == "http://proxy:4000"
+
+
+def test_resolve_workers_explicit_wins(tmp_path):
+    config = tmp_path / "litellm.yaml"
+    config.write_text("model_list: []", encoding="utf-8")
+    result = _resolve_workers("llava:7b", explicit=7, config=config, default=FILTER_WORKERS_DEFAULT)
+    assert result == 7
+
+
+def test_resolve_workers_no_config_uses_default():
+    result = _resolve_workers("llava:7b", explicit=None, config=None, default=FILTER_WORKERS_DEFAULT)
+    assert result == FILTER_WORKERS_DEFAULT
+
+
+def test_resolve_workers_config_used_when_no_explicit(tmp_path):
+    config = tmp_path / "litellm.yaml"
+    with patch("subtitles_ocr.cli.get_workers_from_litellm", return_value=12) as mock:
+        result = _resolve_workers("llava:7b", explicit=None, config=config, default=FILTER_WORKERS_DEFAULT)
+    assert result == 12
+    mock.assert_called_once_with(config, "llava:7b")
