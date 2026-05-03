@@ -14,6 +14,7 @@ dependencies = [
     "click>=8.0",
     "tqdm>=4.67.3",
     "openai>=2.33.0",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
