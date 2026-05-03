@@ -28,12 +28,12 @@ def _minimal_workdir(tmp_path: Path) -> tuple[Path, Path]:
     video.write_bytes(b"fake")
     workdir = tmp_path / "workdir"
     workdir.mkdir()
-    frames_dir = workdir / "frames"
+    frames_dir = workdir / "001-frames"
     frames_dir.mkdir()
 
     manifest = [{"path": str(frames_dir / "000001.jpg"), "timestamp": 0.0}]
-    (workdir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    (workdir / "video_info.json").write_text(
+    (workdir / "001-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (workdir / "001-video_info.json").write_text(
         '{"width": 1920, "height": 1080, "fps": 24.0}', encoding="utf-8"
     )
     return video, workdir
@@ -59,7 +59,7 @@ def test_extract_skipped_when_manifest_exists(tmp_path):
 def test_phash_skipped_when_groups_exist(tmp_path):
     video, workdir = _minimal_workdir(tmp_path)
     fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
-    (workdir / "groups.jsonl").write_text(json.dumps(fake_group) + "\n", encoding="utf-8")
+    (workdir / "002-groups.jsonl").write_text(json.dumps(fake_group) + "\n", encoding="utf-8")
 
     with patch("subtitles_ocr.cli.extract_frames"), \
          patch("subtitles_ocr.cli.compute_groups") as mock_compute, \
@@ -79,7 +79,7 @@ def test_prefilter_is_called_with_all_groups(tmp_path):
     video, workdir = _minimal_workdir(tmp_path)
     # groups.jsonl avec 2 groupes
     fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
-    (workdir / "groups.jsonl").write_text(
+    (workdir / "002-groups.jsonl").write_text(
         json.dumps(fake_group) + "\n" + json.dumps(fake_group) + "\n",
         encoding="utf-8",
     )
@@ -106,17 +106,17 @@ def test_analyze_resumes_from_existing_analysis(tmp_path):
 
     # 3 groupes dans groups.jsonl
     fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
-    (workdir / "groups.jsonl").write_text(
+    (workdir / "002-groups.jsonl").write_text(
         "\n".join([json.dumps(fake_group)] * 3) + "\n", encoding="utf-8"
     )
     # filter.jsonl : tous has_text=True
     fake_filter = {"frame": "frames/000001.jpg", "has_text": True}
-    (workdir / "filter.jsonl").write_text(
+    (workdir / "003-filter.jsonl").write_text(
         "\n".join([json.dumps(fake_filter)] * 3) + "\n", encoding="utf-8"
     )
     # analysis.jsonl : 2 groupes déjà analysés
     done = {"start_time": 0.0, "end_time": 1.0, "elements": []}
-    (workdir / "analysis.jsonl").write_text(
+    (workdir / "004-analysis.jsonl").write_text(
         "\n".join([json.dumps(done)] * 2) + "\n", encoding="utf-8"
     )
 
@@ -143,7 +143,7 @@ def test_prefilter_writes_results_incrementally(tmp_path):
     video, workdir = _minimal_workdir(tmp_path)
 
     fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
-    (workdir / "groups.jsonl").write_text(
+    (workdir / "002-groups.jsonl").write_text(
         "\n".join([json.dumps(fake_group)] * 3) + "\n", encoding="utf-8"
     )
 
@@ -164,14 +164,14 @@ def test_prefilter_writes_results_incrementally(tmp_path):
         ])
 
     # The 2 results yielded before the crash must be persisted
-    filter_lines = _read_jsonl(workdir / "filter.jsonl")
+    filter_lines = _read_jsonl(workdir / "003-filter.jsonl")
     assert len(filter_lines) == 2
 
 
 def test_inference_url_propagated_to_clients(tmp_path):
     video, workdir = _minimal_workdir(tmp_path)
     fake_group = {"start_time": 0.0, "end_time": 1.0, "frame": "frames/000001.jpg"}
-    (workdir / "groups.jsonl").write_text(json.dumps(fake_group) + "\n", encoding="utf-8")
+    (workdir / "002-groups.jsonl").write_text(json.dumps(fake_group) + "\n", encoding="utf-8")
 
     with patch("subtitles_ocr.cli.OllamaClient") as MockClient, \
          patch("subtitles_ocr.cli.prefilter_groups", return_value=iter([False])), \
