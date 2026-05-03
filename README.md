@@ -98,10 +98,8 @@ uv run subtitles-ocr episode01.mkv
 uv run subtitles-ocr episode01.mkv -o subs/episode01.ass -m llava:13b
 ```
 
-## Distributed inference
+## Documentation
 
-See [docs/distributed-inference.md](docs/distributed-inference.md) for how to point the tool at a remote Ollama instance or a LiteLLM proxy spanning multiple machines.
-
-## Development
-
-See [docs/development.md](docs/development.md) for install, test, and run commands.
+- [Install, test, and run commands](docs/development.md)
+- [Distributed inference — remote Ollama or LiteLLM proxy across multiple machines](docs/distributed-inference.md)
+- [Example frames showing supported subtitle types](docs/examples/README.md)
