@@ -65,15 +65,15 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 |--------------------------|--------------------------|-------------------------------------------------------------------------------------------------|
 | `-o`, `--output`         | `<video>.ass`            | Path to the output `.ass` file                                                                  |
 | `-w`, `--workdir`        | `<video>_subtitles_ocr/` | Directory for intermediate files                                                                |
+| `--filter-model`         | `llava:7b`               | Model for pre-filtering                                                                         |
+| `--filter-workers`       | `4`                      | Parallel workers for pre-filtering                                                              |
 | `--analyze-model`        | `qwen2.5vl:3b`           | Model for VLM analysis                                                                          |
-| `--filter-model`         | `llava:7b`               | Ollama model for the pre-filter pass                                                            |
-| `--filter-workers`       | `4`                      | Parallel workers for the pre-filter pass                                                        |
-| `--analyze-workers`      | `1`                      | Parallel workers for the analysis pass (requires `OLLAMA_NUM_PARALLEL` ≥ value in Ollama's env) |
+| `--analyze-workers`      | `1`                      | Parallel workers for VLM analysis (requires `OLLAMA_NUM_PARALLEL` ≥ value in Ollama's env)     |
+| `--reconcile-model`      | `gemma3:1b-it-qat`       | Model for text reconciliation                                                                   |
+| `--reconcile-workers`    | `8`                      | Parallel workers for reconciliation                                                             |
 | `--edge-diff-threshold`  | `8.0`                    | Edge difference threshold for frame grouping                                                    |
 | `--similarity-threshold` | `0.75`                   | Trigram similarity threshold for fuzzy event grouping                                           |
 | `--gap-tolerance`        | `0.5`                    | Max gap in seconds to bridge between similar events                                             |
-| `--reconcile-model`      | `gemma3:1b-it-qat`       | Ollama model for text reconciliation                                                            |
-| `--reconcile-workers`    | `8`                      | Parallel workers for reconciliation                                                             |
 | `--inference-url`        | `http://localhost:11434` | Base URL of the OpenAI-compatible inference server                                              |
 
 ### Example

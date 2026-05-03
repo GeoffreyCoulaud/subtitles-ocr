@@ -33,25 +33,25 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Path to the output .ass file (default: <video>.ass)")
 @click.option("--workdir", "-w", type=click.Path(path_type=Path), default=None,
               help="Working directory for intermediate files")
-@click.option("--analyze-model", default="qwen2.5vl:3b",
-              help="Model for VLM analysis (default: qwen2.5vl:3b)")
 @click.option("--filter-model", default="llava:7b",
-              help="Ollama model for pre-filtering (default: llava:7b)")
+              help="Model for pre-filtering (default: llava:7b)")
 @click.option("--filter-workers", default=4, type=click.IntRange(min=1),
               help="Parallel workers for pre-filtering (default: 4)")
+@click.option("--analyze-model", default="qwen2.5vl:3b",
+              help="Model for VLM analysis (default: qwen2.5vl:3b)")
 @click.option("--analyze-workers", default=1, type=click.IntRange(min=1),
               help="Parallel workers for VLM analysis (default: 1). "
                    "Values > 1 require OLLAMA_NUM_PARALLEL >= value in the Ollama env.")
+@click.option("--reconcile-model", default="gemma3:1b-it-qat",
+              help="Model for text reconciliation (default: gemma3:1b-it-qat)")
+@click.option("--reconcile-workers", default=8, type=click.IntRange(min=1),
+              help="Parallel workers for reconciliation (default: 8)")
 @click.option("--edge-diff-threshold", default=8.0, type=click.FloatRange(min=0.0),
               help="Edge difference threshold for frame grouping (default: 8.0)")
 @click.option("--similarity-threshold", default=0.75, type=click.FloatRange(min=0.0, max=1.0),
               help="Trigram similarity threshold for fuzzy grouping (default: 0.75)")
 @click.option("--gap-tolerance", default=0.5, type=click.FloatRange(min=0.0),
               help="Gap tolerance (seconds) between similar events (default: 0.5)")
-@click.option("--reconcile-model", default="gemma3:1b-it-qat",
-              help="Ollama model for text reconciliation (default: gemma3:1b-it-qat)")
-@click.option("--reconcile-workers", default=8, type=click.IntRange(min=1),
-              help="Parallel workers for reconciliation (default: 8)")
 @click.option("--inference-url", default="http://localhost:11434",
               help="Base URL of the OpenAI-compatible inference server (default: http://localhost:11434)")
 @click.option("--debug", is_flag=True, default=False,
