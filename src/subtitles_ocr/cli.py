@@ -19,12 +19,30 @@ from subtitles_ocr.pipeline.reconcile import reconcile_groups
 from subtitles_ocr.pipeline.serialize import build_ass_content
 from subtitles_ocr.vlm.client import OllamaClient
 from subtitles_ocr.vlm.prompt import SYSTEM_PROMPT, PREFILTER_PROMPT
+from subtitles_ocr.litellm_config import get_workers_from_litellm
 
 
 def _read_jsonl(path: Path) -> list[str]:
     if not path.exists():
         return []
     return [s for line in path.read_text(encoding="utf-8").splitlines() if (s := line.strip())]
+
+
+FILTER_WORKERS_DEFAULT = 4
+ANALYZE_WORKERS_DEFAULT = 1
+RECONCILE_WORKERS_DEFAULT = 8
+
+
+def _resolve_workers(model: str, explicit: int | None, config: Path | None, default: int) -> int:
+    if explicit is not None:
+        logging.debug("Workers for %s: %d (explicit)", model, explicit)
+        return explicit
+    if config is not None:
+        count = get_workers_from_litellm(config, model)
+        logging.debug("Workers for %s: %d (litellm config)", model, count)
+        return count
+    logging.debug("Workers for %s: %d (default)", model, default)
+    return default
 
 
 @click.command()
@@ -35,16 +53,16 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Working directory for intermediate files")
 @click.option("--filter-model", default="llava:7b",
               help="Model for pre-filtering (default: llava:7b)")
-@click.option("--filter-workers", default=4, type=click.IntRange(min=1),
+@click.option("--filter-workers", default=None, type=click.IntRange(min=1),
               help="Parallel workers for pre-filtering (default: 4)")
 @click.option("--analyze-model", default="qwen2.5vl:3b",
               help="Model for VLM analysis (default: qwen2.5vl:3b)")
-@click.option("--analyze-workers", default=1, type=click.IntRange(min=1),
+@click.option("--analyze-workers", default=None, type=click.IntRange(min=1),
               help="Parallel workers for VLM analysis (default: 1). "
                    "Values > 1 require OLLAMA_NUM_PARALLEL >= value in the Ollama env.")
 @click.option("--reconcile-model", default="gemma3:1b-it-qat",
               help="Model for text reconciliation (default: gemma3:1b-it-qat)")
-@click.option("--reconcile-workers", default=8, type=click.IntRange(min=1),
+@click.option("--reconcile-workers", default=None, type=click.IntRange(min=1),
               help="Parallel workers for reconciliation (default: 8)")
 @click.option("--edge-diff-threshold", default=8.0, type=click.FloatRange(min=0.0),
               help="Edge difference threshold for frame grouping (default: 8.0)")
@@ -54,6 +72,9 @@ def _read_jsonl(path: Path) -> list[str]:
               help="Gap tolerance (seconds) between similar events (default: 0.5)")
 @click.option("--inference-url", default="http://localhost:11434",
               help="Base URL of the OpenAI-compatible inference server (default: http://localhost:11434)")
+@click.option("--litellm-config", default=None, type=click.Path(exists=True, path_type=Path),
+              help="Path to a litellm.yaml; auto-derives worker counts per model "
+                   "(overrides defaults, overridden by explicit --*-workers flags)")
 @click.option("--debug", is_flag=True, default=False,
               help="Enable debug logging (VLM model outputs, etc.)")
 def cli(
@@ -62,14 +83,15 @@ def cli(
     workdir: Path | None,
     analyze_model: str,
     filter_model: str,
-    filter_workers: int,
-    analyze_workers: int,
+    filter_workers: int | None,
+    analyze_workers: int | None,
     edge_diff_threshold: float,
     similarity_threshold: float,
     gap_tolerance: float,
     reconcile_model: str,
-    reconcile_workers: int,
+    reconcile_workers: int | None,
     inference_url: str,
+    litellm_config: Path | None,
     debug: bool,
 ) -> None:
     """Extract hardcoded subtitles from an anime video and produce a .ass file."""
@@ -83,6 +105,10 @@ def cli(
         output = video.with_suffix(".ass")
     if workdir is None:
         workdir = video.parent / (video.stem + "_subtitles_ocr")
+
+    filter_workers    = _resolve_workers(filter_model,    filter_workers,    litellm_config, FILTER_WORKERS_DEFAULT)
+    analyze_workers   = _resolve_workers(analyze_model,   analyze_workers,   litellm_config, ANALYZE_WORKERS_DEFAULT)
+    reconcile_workers = _resolve_workers(reconcile_model, reconcile_workers, litellm_config, RECONCILE_WORKERS_DEFAULT)
 
     workdir.mkdir(parents=True, exist_ok=True)
     step = 0
