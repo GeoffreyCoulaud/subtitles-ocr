@@ -13,6 +13,7 @@ def parse_elements(raw: str) -> list[SubtitleElement]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
+        log.warning("parse_elements: invalid JSON: %r", raw)
         return []
     result = []
     for item in data:
@@ -28,7 +29,7 @@ def analyze_group(
     client: OllamaClient,
     prompt: str,
 ) -> FrameAnalysis:
-    raw = client.analyze(group.frame, prompt)
+    raw = client.analyze(group.frame, prompt, json_mode=True)
     log.debug("analyze [%s] raw → %r", group.frame.name, raw)
     elements = parse_elements(raw)
     if not elements:

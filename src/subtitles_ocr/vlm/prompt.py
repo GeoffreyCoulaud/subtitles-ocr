@@ -28,7 +28,7 @@ Color palette — use the name, not the hex value:
 If the color does not match any palette entry, use "other".\
 """
 
-PREFILTER_PROMPT = "Is there text visible in this image? Respond yes or no."
+PREFILTER_PROMPT = 'Is there text visible in this image? Return only a JSON object: {"has_text": true} or {"has_text": false}.'
 
 RECONCILE_PROMPT = """\
 You are correcting OCR errors in French subtitle text.

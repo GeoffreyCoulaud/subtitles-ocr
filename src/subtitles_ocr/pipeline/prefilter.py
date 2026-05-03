@@ -1,5 +1,5 @@
+import json
 import logging
-import re
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -23,14 +23,16 @@ def prefilter_groups(
     def classify(group: FrameGroup) -> bool:
         nonlocal error_count
         try:
-            response = client.analyze(group.frame, prompt)
-            low = response.lower()
-            if re.search(r"\byes\b", low):
-                log.debug("prefilter [%s] → YES | %r", group.frame.name, response)
-                return True
-            if re.search(r"\bno\b", low):
-                log.debug("prefilter [%s] → NO  | %r", group.frame.name, response)
-                return False
+            response = client.analyze(group.frame, prompt, json_mode=True)
+            try:
+                result = json.loads(response).get("has_text")
+                if isinstance(result, str):
+                    result = {"true": True, "false": False}.get(result.lower())
+                if isinstance(result, bool):
+                    log.debug("prefilter [%s] → %s | %r", group.frame.name, result, response)
+                    return result
+            except (json.JSONDecodeError, AttributeError):
+                pass
             log.debug("prefilter [%s] → AMBIGUOUS (kept) | %r", group.frame.name, response)
             return True  # ambiguous → conservative, keep frame
         except RuntimeError as e:

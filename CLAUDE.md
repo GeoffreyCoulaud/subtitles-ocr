@@ -24,7 +24,7 @@ See [docs/development.md](docs/development.md) for install, test, and run comman
 
 ## Code-level details
 
-**Pre-filter contract:** conservative, zero false negatives. A response containing "no" (word boundary) → `False`. A response containing "yes" (word boundary) → `True`. Anything else (ambiguous, error, empty) → `True`. This is implemented with `re.search(r"\byes\b")` / `re.search(r"\bno\b")` — do not simplify to substring matching (`"no" in response` would match "cannot").
+**Pre-filter contract:** conservative, zero false negatives. Uses `json_mode=True`; expects `{"has_text": true/false}`. A boolean `has_text` field → use its value directly. Anything else (parse error, missing/non-boolean field, API error) → `True`. This keeps the conservative invariant without regex heuristics.
 
 **Pydantic v2** throughout: use `model_validate()`, `model_validate_json()`, `model_dump(mode="json")`, `model_dump_json()`.
 

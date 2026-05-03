@@ -12,12 +12,15 @@ class OllamaClient:
         self.model = model
         self._client = OpenAI(base_url=f"{host}/v1", api_key="ollama")
 
-    def analyze(self, image_path: Path, prompt: str) -> str:
+    def analyze(self, image_path: Path, prompt: str, json_mode: bool = False) -> str:
         try:
             image_data = image_path.read_bytes()
         except OSError as e:
             raise RuntimeError(f"Cannot read image {image_path}: {e}") from e
         b64 = base64.b64encode(image_data).decode()
+        kwargs = {}
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
         try:
             response = self._client.chat.completions.create(
                 model=self.model,
@@ -28,6 +31,7 @@ class OllamaClient:
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
                     ],
                 }],
+                **kwargs,
             )
         except Exception as e:
             raise RuntimeError(f"Ollama VLM call failed ({self.model}): {e}") from e
