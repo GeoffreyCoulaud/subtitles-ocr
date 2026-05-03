@@ -5,3 +5,4 @@ input/
 docs/superpowers
 build/
 .idea/
+litellm.yaml
