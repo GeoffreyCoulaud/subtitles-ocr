@@ -1,6 +1,6 @@
 # subtitles-ocr
 
-A work-in-progress harcoded subtitles extractor
+A work-in-progress hardcoded subtitles extractor
 
 The goal is to pass as an input a video with hardcoded subtitles (hardsubs) and output a clean, ready to use, `.ass` subtitles file.
 Focus is primarily on fansubbed anime, where no official subs exist, but good quality raws have appeared.
@@ -9,8 +9,8 @@ Original text positions should not be altered. This is a pure extraction program
 
 ## What is not a subtitle
 
-- Forced text already in the source material (eg. credits, character names)
-- In-scene text already in the source material (eg. signs)
+- Forced text already in the source material (e.g. credits, character names)
+- In-scene text already in the source material (e.g. signs)
 - Generally, any other text not part of the subtitles
 
 ## How it works
@@ -61,20 +61,20 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 
 ### Options
 
-| Option                   | Default                  | Description                                                                                     |
-|--------------------------|--------------------------|-------------------------------------------------------------------------------------------------|
-| `-o`, `--output`         | `<video>.ass`            | Path to the output `.ass` file                                                                  |
-| `-w`, `--workdir`        | `<video>_subtitles_ocr/` | Directory for intermediate files                                                                |
-| `--filter-model`         | `llava:7b`               | Model for pre-filtering                                                                         |
-| `--filter-workers`       | `4`                      | Parallel workers for pre-filtering                                                              |
-| `--analyze-model`        | `qwen2.5vl:3b`           | Model for VLM analysis                                                                          |
-| `--analyze-workers`      | `1`                      | Parallel workers for VLM analysis (requires `OLLAMA_NUM_PARALLEL` ≥ value in Ollama's env)     |
-| `--reconcile-model`      | `gemma3:1b-it-qat`       | Model for text reconciliation                                                                   |
-| `--reconcile-workers`    | `8`                      | Parallel workers for reconciliation                                                             |
-| `--edge-diff-threshold`  | `8.0`                    | Edge difference threshold for frame grouping                                                    |
-| `--similarity-threshold` | `0.75`                   | Trigram similarity threshold for fuzzy event grouping                                           |
-| `--gap-tolerance`        | `0.5`                    | Max gap in seconds to bridge between similar events                                             |
-| `--inference-url`        | `http://localhost:11434` | Base URL of the OpenAI-compatible inference server                                              |
+| Option                   | Default                  | Description                                                                                |
+|--------------------------|--------------------------|--------------------------------------------------------------------------------------------|
+| `-o`, `--output`         | `<video>.ass`            | Path to the output `.ass` file                                                             |
+| `-w`, `--workdir`        | `<video>_subtitles_ocr/` | Directory for intermediate files                                                           |
+| `--filter-model`         | `llava:7b`               | Model for pre-filtering                                                                    |
+| `--filter-workers`       | `4`                      | Parallel workers for pre-filtering                                                         |
+| `--analyze-model`        | `qwen2.5vl:3b`           | Model for VLM analysis                                                                     |
+| `--analyze-workers`      | `1`                      | Parallel workers for VLM analysis (requires `OLLAMA_NUM_PARALLEL` ≥ value in Ollama's env) |
+| `--reconcile-model`      | `gemma3:1b-it-qat`       | Model for text reconciliation                                                              |
+| `--reconcile-workers`    | `8`                      | Parallel workers for reconciliation                                                        |
+| `--edge-diff-threshold`  | `8.0`                    | Edge difference threshold for frame grouping                                               |
+| `--similarity-threshold` | `0.75`                   | Trigram similarity threshold for fuzzy event grouping                                      |
+| `--gap-tolerance`        | `0.5`                    | Max gap in seconds to bridge between similar events                                        |
+| `--inference-url`        | `http://localhost:11434` | Base URL of the OpenAI-compatible inference server                                         |
 
 ### Example
 
