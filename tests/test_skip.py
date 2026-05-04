@@ -1,5 +1,5 @@
 import pytest
-from subtitles_ocr.pipeline.skip import parse_time, format_time, parse_skip_range
+from subtitles_ocr.pipeline.skip import parse_time, format_time, parse_skip_range, normalize_ranges
 
 
 class TestParseTime:
@@ -75,3 +75,26 @@ class TestParseSkipRange:
     def test_bad_end_raises(self):
         with pytest.raises(ValueError):
             parse_skip_range("0-abc")
+
+
+class TestNormalizeRanges:
+    def test_empty(self):
+        assert normalize_ranges([]) == []
+
+    def test_single(self):
+        assert normalize_ranges([(0.0, 90.0)]) == [(0.0, 90.0)]
+
+    def test_non_overlapping_sorted(self):
+        assert normalize_ranges([(0.0, 90.0), (120.0, 180.0)]) == [(0.0, 90.0), (120.0, 180.0)]
+
+    def test_overlapping_merged(self):
+        assert normalize_ranges([(0.0, 100.0), (90.0, 180.0)]) == [(0.0, 180.0)]
+
+    def test_adjacent_merged(self):
+        assert normalize_ranges([(0.0, 90.0), (90.0, 180.0)]) == [(0.0, 180.0)]
+
+    def test_out_of_order_sorted(self):
+        assert normalize_ranges([(120.0, 180.0), (0.0, 90.0)]) == [(0.0, 90.0), (120.0, 180.0)]
+
+    def test_out_of_order_overlapping_merged(self):
+        assert normalize_ranges([(100.0, 200.0), (0.0, 150.0)]) == [(0.0, 200.0)]

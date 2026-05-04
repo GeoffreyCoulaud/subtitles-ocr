@@ -42,3 +42,20 @@ def parse_skip_range(s: str) -> tuple[float, float]:
     if start >= end:
         raise ValueError(f"Invalid skip range {s!r}: start ({start}) must be less than end ({end})")
     return (start, end)
+
+
+def normalize_ranges(ranges: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Sort and merge overlapping or adjacent skip ranges."""
+    if not ranges:
+        return []
+    sorted_ranges = sorted(ranges, key=lambda r: r[0])
+    current_start, current_end = sorted_ranges[0]
+    result: list[tuple[float, float]] = []
+    for start, end in sorted_ranges[1:]:
+        if start <= current_end:
+            current_end = max(current_end, end)
+        else:
+            result.append((current_start, current_end))
+            current_start, current_end = start, end
+    result.append((current_start, current_end))
+    return result
