@@ -18,7 +18,7 @@ def _majority(values: list[str]) -> str:
     for v in values:
         if counts[v] == max_count:
             return v
-    return values[0]
+    raise AssertionError("unreachable")
 
 
 def _reconcile_text(texts: list[str], client: OllamaClient) -> str:
