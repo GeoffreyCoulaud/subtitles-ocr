@@ -2,10 +2,8 @@
 import pytest
 import logging
 from unittest.mock import patch, call
-import openai
 from subtitles_ocr.pipeline.retry import (
     RetryConfig, RetryExhausted, NonRetryable, with_retry,
-    _RETRYABLE_TYPES, _NON_RETRYABLE_TYPES,
 )
 
 
@@ -116,18 +114,20 @@ def test_with_retry_logs_warning_on_exhaustion(caplog):
     assert any("exhausted" in r.message.lower() for r in caplog.records)
 
 
-def test_non_retryable_types_tuple():
-    assert OSError in _NON_RETRYABLE_TYPES
-    assert openai.AuthenticationError in _NON_RETRYABLE_TYPES
-    assert openai.PermissionDeniedError in _NON_RETRYABLE_TYPES
-    assert openai.NotFoundError in _NON_RETRYABLE_TYPES
-    assert openai.BadRequestError in _NON_RETRYABLE_TYPES
+def test_unclassified_exception_propagates_unchanged():
+    def fn():
+        raise KeyError("bug")
+    with pytest.raises(KeyError, match="bug"):
+        with_retry(fn, RetryConfig(max_attempts=3))
 
 
-def test_retryable_types_tuple():
-    assert openai.APIConnectionError in _RETRYABLE_TYPES
-    assert openai.APITimeoutError in _RETRYABLE_TYPES
-    assert openai.RateLimitError in _RETRYABLE_TYPES
-    assert openai.InternalServerError in _RETRYABLE_TYPES
-    assert ValueError in _RETRYABLE_TYPES
-    assert RuntimeError in _RETRYABLE_TYPES
+def test_retry_exhausted_cause_is_original_error():
+    original = ValueError("root cause")
+    def fn():
+        raise original
+    with patch("subtitles_ocr.pipeline.retry.time.sleep"):
+        with pytest.raises(RetryExhausted) as exc_info:
+            with_retry(fn, RetryConfig(max_attempts=2))
+    assert exc_info.value.__cause__ is original
+
+

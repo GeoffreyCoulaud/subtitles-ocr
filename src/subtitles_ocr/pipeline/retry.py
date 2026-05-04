@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Callable, TypeVar
 
 from openai import (
-    APIConnectionError, APITimeoutError, RateLimitError, InternalServerError,
+    APIConnectionError, RateLimitError, InternalServerError,
     AuthenticationError, PermissionDeniedError, NotFoundError, BadRequestError,
 )
 
@@ -38,9 +38,10 @@ _NON_RETRYABLE_TYPES = (
 
 _RETRYABLE_TYPES = (
     APIConnectionError,
-    APITimeoutError,
     RateLimitError,
     InternalServerError,
+    # ValueError and RuntimeError: per-element VLM processing failures
+    # (parse errors and empty model responses, respectively)
     ValueError,
     RuntimeError,
 )
