@@ -1,3 +1,4 @@
+# tests/test_vlm_client.py
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -38,13 +39,36 @@ def test_analyze_returns_raw_string():
     assert result == '[{"text": "Bonjour"}]'
 
 
-def test_analyze_raises_on_none_content():
+def test_analyze_raises_runtime_error_on_none_content():
     mock_openai = MagicMock()
     mock_openai.chat.completions.create.return_value = _make_response(None)
     with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
         with patch.object(Path, "read_bytes", return_value=b"image_data"):
             client = OllamaClient(model="test-model")
             with pytest.raises(RuntimeError, match="no text content"):
+                client.analyze(Path("frame.jpg"), "prompt")
+
+
+def test_analyze_propagates_oserror_from_read_bytes():
+    mock_openai = MagicMock()
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
+        with patch.object(Path, "read_bytes", side_effect=OSError("no such file")):
+            client = OllamaClient(model="test-model")
+            with pytest.raises(OSError):
+                client.analyze(Path("missing.jpg"), "prompt")
+
+
+def test_analyze_propagates_openai_exceptions():
+    from openai import APIConnectionError
+    import httpx
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.side_effect = APIConnectionError(
+        request=httpx.Request("GET", "http://localhost")
+    )
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
+        with patch.object(Path, "read_bytes", return_value=b"image_data"):
+            client = OllamaClient(model="test-model")
+            with pytest.raises(APIConnectionError):
                 client.analyze(Path("frame.jpg"), "prompt")
 
 
@@ -60,34 +84,26 @@ def test_chat_returns_text_response():
     assert messages[1] == {"role": "user", "content": "prompt text"}
 
 
-def test_chat_retries_on_failure_then_succeeds():
-    mock_openai = MagicMock()
-    mock_openai.chat.completions.create.side_effect = [
-        Exception("timeout"),
-        _make_response("success"),
-    ]
-    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
-        client = OllamaClient(model="test-model")
-        result = client.chat("prompt", system="system", retries=3)
-    assert result == "success"
-    assert mock_openai.chat.completions.create.call_count == 2
-
-
-def test_chat_raises_after_all_retries_exhausted():
-    mock_openai = MagicMock()
-    mock_openai.chat.completions.create.side_effect = Exception("always fails")
-    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
-        client = OllamaClient(model="test-model")
-        with pytest.raises(RuntimeError, match="always fails"):
-            client.chat("prompt", system="system", retries=3)
-    assert mock_openai.chat.completions.create.call_count == 3
-
-
-def test_chat_raises_on_empty_content():
+def test_chat_raises_runtime_error_on_empty_content():
     mock_openai = MagicMock()
     mock_openai.chat.completions.create.return_value = _make_response(None)
     with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
         client = OllamaClient(model="test-model")
         with pytest.raises(RuntimeError, match="no text content"):
-            client.chat("prompt", system="system", retries=2)
-    assert mock_openai.chat.completions.create.call_count == 2
+            client.chat("prompt", system="system")
+    assert mock_openai.chat.completions.create.call_count == 1
+
+
+def test_chat_propagates_openai_exceptions():
+    from openai import RateLimitError
+    import httpx
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.side_effect = RateLimitError(
+        message="rate limited",
+        response=httpx.Response(429, request=httpx.Request("POST", "http://localhost")),
+        body=None,
+    )
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
+        client = OllamaClient(model="test-model")
+        with pytest.raises(RateLimitError):
+            client.chat("prompt", system="system")
