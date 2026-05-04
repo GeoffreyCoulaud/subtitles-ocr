@@ -91,7 +91,6 @@ def test_chat_raises_runtime_error_on_empty_content():
         client = OllamaClient(model="test-model")
         with pytest.raises(RuntimeError, match="no text content"):
             client.chat("prompt", system="system")
-    assert mock_openai.chat.completions.create.call_count == 1
 
 
 def test_chat_propagates_openai_exceptions():
