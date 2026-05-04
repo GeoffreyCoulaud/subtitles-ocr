@@ -1,16 +1,9 @@
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from click.testing import CliRunner
 from subtitles_ocr.cli import _read_jsonl, cli, _resolve_workers, FILTER_WORKERS_DEFAULT
-from subtitles_ocr.models import FrameAnalysis, SubtitleEvent, SubtitleElement
-
-
-def _el() -> SubtitleElement:
-    return SubtitleElement(
-        text="X", style="regular", color="#FFFFFF",
-        border_color="#000000", position="bottom", alignment="center",
-    )
+from subtitles_ocr.models import FrameAnalysis
 
 
 def test_read_jsonl_returns_empty_when_file_missing(tmp_path):
