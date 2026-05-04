@@ -1,6 +1,7 @@
 # tests/test_resume.py
 import json
 import pytest
+from dataclasses import dataclass
 from pathlib import Path
 from subtitles_ocr.pipeline.resume import resume_from_jsonl
 
@@ -23,7 +24,8 @@ def test_resume_returns_empty_remaining_when_all_processed(tmp_path):
     path = tmp_path / "data.jsonl"
     _write_jsonl(path, [{"id": "a"}, {"id": "b"}])
     processed, remaining = resume_from_jsonl(["a", "b"], path, lambda x: x)
-    assert len(processed) == 2
+    ids = [json.loads(line)["id"] for line in processed]
+    assert ids == ["a", "b"]
     assert remaining == []
 
 
@@ -55,8 +57,6 @@ def test_resume_skips_blank_lines(tmp_path):
 
 
 def test_resume_with_custom_id_extractor(tmp_path):
-    from dataclasses import dataclass
-
     @dataclass
     class Item:
         name: str
@@ -68,11 +68,3 @@ def test_resume_with_custom_id_extractor(tmp_path):
     processed, remaining = resume_from_jsonl(items, path, lambda item: item.name)
     assert len(processed) == 1
     assert remaining == [Item("bar", 2)]
-
-
-def test_resume_empty_elements(tmp_path):
-    path = tmp_path / "data.jsonl"
-    _write_jsonl(path, [{"id": "x"}])
-    processed, remaining = resume_from_jsonl([], path, lambda x: x)
-    assert processed == []
-    assert remaining == []

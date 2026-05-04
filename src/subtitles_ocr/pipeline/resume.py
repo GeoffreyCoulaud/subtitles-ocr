@@ -16,6 +16,10 @@ def resume_from_jsonl(
     Reads JSONL entries from path; matches each to an element via the "id"
     field. Returns already-processed raw lines sorted to original element
     order, and unprocessed elements in original order.
+
+    Preconditions:
+    - Every non-blank line in the file must be valid JSON with an "id" field.
+    - Duplicate IDs in the file result in the last entry being used (last-write wins).
     """
     if not path.exists():
         return [], list(elements)
