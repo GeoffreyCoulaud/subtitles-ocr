@@ -1,3 +1,4 @@
+# src/subtitles_ocr/pipeline/analyze.py
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -5,27 +6,23 @@ from typing import Generator
 
 from subtitles_ocr.models import FrameGroup, FrameAnalysis, SubtitleElement
 from subtitles_ocr.vlm.client import OllamaClient
+from subtitles_ocr.pipeline.retry import RetryConfig, RetryExhausted, NonRetryable, with_retry
 
 log = logging.getLogger(__name__)
 
 
 def parse_elements(raw: str) -> list[SubtitleElement]:
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        log.warning("parse_elements: invalid JSON: %r", raw)
-        return []
+    data = json.loads(raw)
     if isinstance(data, dict):
         data = [data]
     if not isinstance(data, list):
-        log.warning("parse_elements: unexpected type %s: %r", type(data).__name__, raw)
-        return []
+        raise ValueError(f"expected JSON array or object, got {type(data).__name__}: {raw!r}")
     result = []
     for item in data:
         try:
             result.append(SubtitleElement.model_validate(item))
-        except ValueError:
-            pass
+        except Exception:
+            log.debug("parse_elements: skipping invalid item: %r", item)
     return result
 
 
@@ -59,8 +56,9 @@ def analyze_groups(
     client: OllamaClient,
     prompt: str,
     workers: int,
-) -> Generator[FrameAnalysis, None, None]:
-    def process(group: FrameGroup, has_text: bool) -> FrameAnalysis:
+    retry_config: RetryConfig = RetryConfig(),
+) -> Generator[FrameAnalysis | None, None, None]:
+    def process(group: FrameGroup, has_text: bool) -> FrameAnalysis | None:
         if not has_text:
             return FrameAnalysis(
                 start_time=group.start_time,
@@ -68,14 +66,13 @@ def analyze_groups(
                 elements=[],
             )
         try:
-            return analyze_group(group, client, prompt)
-        except RuntimeError as e:
-            log.warning("analyze [%s] failed: %s", group.frame.name, e)
-            return FrameAnalysis(
-                start_time=group.start_time,
-                end_time=group.end_time,
-                elements=[],
-            )
+            return with_retry(lambda: analyze_group(group, client, prompt), retry_config, log)
+        except NonRetryable as e:
+            log.warning("analyze [%s] non-retryable: %s", group.frame.name, e.__cause__)
+            return None
+        except RetryExhausted:
+            log.warning("analyze [%s] retries exhausted", group.frame.name)
+            return None
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         for result in executor.map(process, groups, filter_results):
