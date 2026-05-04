@@ -15,9 +15,7 @@ def _element(**kwargs) -> SubtitleElement:
         text="Test",
         style="regular",
         color="white",
-        border_color="black",
         position="bottom",
-        alignment="center",
     )
     return SubtitleElement(**{**defaults, **kwargs})
 
@@ -46,39 +44,10 @@ def test_rgb_to_ass_color_blue():
     assert rgb_to_ass_color("#0000FF") == "&HFF0000&"
 
 
-def test_element_to_ass_tags_alignment_bottom_center():
-    assert "\\an2" in element_to_ass_tags(_element(position="bottom", alignment="center"))
-
-
-def test_element_to_ass_tags_alignment_bottom_left():
-    assert "\\an1" in element_to_ass_tags(_element(position="bottom", alignment="left"))
-
-
-def test_element_to_ass_tags_alignment_bottom_right():
-    assert "\\an3" in element_to_ass_tags(_element(position="bottom", alignment="right"))
-
-
-def test_element_to_ass_tags_alignment_top_left():
-    assert "\\an7" in element_to_ass_tags(_element(position="top", alignment="left"))
-
-
-def test_element_to_ass_tags_alignment_top_center():
-    assert "\\an8" in element_to_ass_tags(_element(position="top", alignment="center"))
-
-
-def test_element_to_ass_tags_alignment_top_right():
-    assert "\\an9" in element_to_ass_tags(_element(position="top", alignment="right"))
-
-
 def test_element_to_ass_tags_colors():
-    el = _element(color="yellow", border_color="cyan")
+    el = _element(color="yellow")
     tags = element_to_ass_tags(el)
     assert "\\c&H00FFFF&" in tags    # yellow #FFFF00 → BGR 00FFFF
-    assert "\\3c&HFFFF00&" in tags   # cyan #00FFFF → BGR FFFF00
-
-
-def test_element_to_ass_tags_bold():
-    assert "\\b1" in element_to_ass_tags(_element(style="bold"))
 
 
 def test_element_to_ass_tags_italic():
@@ -119,3 +88,20 @@ def test_build_ass_content_contains_script_info():
 def test_build_ass_content_contains_events_section():
     content = build_ass_content([], VIDEO_INFO)
     assert "[Events]" in content
+
+
+# --- New schema: alignment removed (always center), border_color removed ---
+
+def test_element_to_ass_tags_bottom_uses_center_code():
+    el = SubtitleElement(text="Test", style="regular", color="white", position="bottom")
+    assert "\\an2" in element_to_ass_tags(el)
+
+
+def test_element_to_ass_tags_top_uses_center_code():
+    el = SubtitleElement(text="Test", style="regular", color="white", position="top")
+    assert "\\an8" in element_to_ass_tags(el)
+
+
+def test_element_to_ass_tags_has_no_border_color_tag():
+    el = SubtitleElement(text="Test", style="regular", color="white", position="bottom")
+    assert "\\3c" not in element_to_ass_tags(el)

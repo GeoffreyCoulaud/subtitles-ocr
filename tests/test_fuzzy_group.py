@@ -8,9 +8,7 @@ def _el(text: str, position: str = "bottom") -> SubtitleElement:
         text=text,
         style="regular",
         color="white",
-        border_color="black",
         position=position,
-        alignment="center",
     )
 
 

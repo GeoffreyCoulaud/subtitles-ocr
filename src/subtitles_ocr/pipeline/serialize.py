@@ -15,13 +15,9 @@ Style: Default,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-_AN_CODE: dict[tuple[str, str], int] = {
-    ("top", "left"): 7,
-    ("top", "center"): 8,
-    ("top", "right"): 9,
-    ("bottom", "left"): 1,
-    ("bottom", "center"): 2,
-    ("bottom", "right"): 3,
+_AN_CODE: dict[str, int] = {
+    "top": 8,
+    "bottom": 2,
 }
 
 
@@ -45,15 +41,11 @@ def rgb_to_ass_color(hex_color: str) -> str:
 
 
 def element_to_ass_tags(element: SubtitleElement) -> str:
-    an = _AN_CODE[(element.position, element.alignment)]
     tags = [
-        f"\\an{an}",
+        f"\\an{_AN_CODE[element.position]}",
         f"\\c{rgb_to_ass_color(element.color)}",
-        f"\\3c{rgb_to_ass_color(element.border_color)}",
     ]
-    if element.style == "bold":
-        tags.append("\\b1")
-    elif element.style == "italic":
+    if element.style == "italic":
         tags.append("\\i1")
     return "{" + "".join(tags) + "}"
 

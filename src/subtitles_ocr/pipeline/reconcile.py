@@ -41,8 +41,6 @@ def _reconcile_cluster(cluster: list[SubtitleEvent], client: OllamaClient) -> Su
             text=_reconcile_text([el.text for el in all_els], client),
             style=_majority([el.style for el in all_els]),
             color=_majority([el.color for el in all_els]),
-            border_color=_majority([el.border_color for el in all_els]),
-            alignment=_majority([el.alignment for el in all_els]),
             position=position,
         ))
 

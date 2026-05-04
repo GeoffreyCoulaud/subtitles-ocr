@@ -10,11 +10,8 @@ def _no_retry() -> RetryConfig:
     return RetryConfig(max_attempts=1)
 
 
-def _el(text: str, color: str = "white", alignment: str = "center", position: str = "bottom") -> SubtitleElement:
-    return SubtitleElement(
-        text=text, style="regular", color=color,
-        border_color="black", position=position, alignment=alignment,
-    )
+def _el(text: str, color: str = "white", position: str = "bottom") -> SubtitleElement:
+    return SubtitleElement(text=text, style="regular", color=color, position=position)
 
 
 def _event(start: float, end: float, elements: list[SubtitleElement]) -> SubtitleEvent:
@@ -57,25 +54,6 @@ def test_majority_vote_selects_most_frequent_color():
     result = _reconcile_cluster(events, client)
     client.chat.assert_not_called()
     assert result.elements[0].color == "#FFFFFF"
-
-
-def test_majority_vote_selects_most_frequent_alignment():
-    events = [
-        _event(0.0, 1.0, [_el("A", alignment="left")]),
-        _event(1.0, 2.0, [_el("A", alignment="center")]),
-        _event(2.0, 3.0, [_el("A", alignment="center")]),
-    ]
-    client = MagicMock()
-    assert _reconcile_cluster(events, client).elements[0].alignment == "center"
-
-
-def test_majority_vote_tie_uses_first_encountered():
-    events = [
-        _event(0.0, 1.0, [_el("A", alignment="left")]),
-        _event(1.0, 2.0, [_el("A", alignment="center")]),
-    ]
-    client = MagicMock()
-    assert _reconcile_cluster(events, client).elements[0].alignment == "left"
 
 
 def test_llm_called_when_texts_differ():

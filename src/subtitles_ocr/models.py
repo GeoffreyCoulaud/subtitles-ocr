@@ -6,8 +6,6 @@ SUBTITLE_PALETTE: dict[str, str] = {
     "white":  "#FFFFFF",
     "yellow": "#FFFF00",
     "cyan":   "#00FFFF",
-    "black":  "#000000",
-    "gray":   "#808080",
 }
 
 
@@ -30,18 +28,14 @@ class FrameGroup(BaseModel):
 
 class SubtitleElement(BaseModel):
     text: str
-    style: Literal["regular", "bold", "italic"]
-    color: str
-    border_color: str
-    position: Literal["top", "bottom"]
-    alignment: Literal["left", "center", "right"]
+    style: Literal["regular", "italic"] = "regular"
+    color: str = "white"
+    position: Literal["top", "bottom"] = "bottom"
 
     @model_validator(mode="after")
-    def resolve_colors(self) -> "SubtitleElement":
+    def resolve_color(self) -> "SubtitleElement":
         if not self.color.startswith("#"):
             self.color = SUBTITLE_PALETTE.get(self.color, "#FFFFFF")
-        if not self.border_color.startswith("#"):
-            self.border_color = SUBTITLE_PALETTE.get(self.border_color, "#000000")
         return self
 
 

@@ -6,9 +6,7 @@ def _element(text: str = "Bonjour", **kwargs) -> SubtitleElement:
     defaults = dict(
         style="regular",
         color="white",
-        border_color="black",
         position="bottom",
-        alignment="center",
     )
     return SubtitleElement(text=text, **{**defaults, **kwargs})
 

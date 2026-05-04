@@ -7,25 +7,23 @@ Extract ALL French subtitle text visible in this image. Do NOT extract:
 - French translations of in-scene text (signs, posters, props, backgrounds)
 
 Return ONLY a raw JSON object — no markdown, no code fences, no explanation. Start your response with { and end with }. Use this exact format:
-{"subtitles": [{"text": "...", "style": "...", "color": "...", "border_color": "...", "position": "...", "alignment": "..."}, ...]}
+{"subtitles": [{"text": "...", "style": "...", "color": "...", "position": "..."}, ...]}
 If no French subtitles are visible, return: {"subtitles": []}
 
-Each element in the "subtitles" array must be a JSON object with exactly these fields:
-- "text": exact text content (string)
-- "style": one of "regular", "bold", "italic" (string)
-- "color": text fill color name chosen from the palette below (string)
-- "border_color": text outline/border color name chosen from the palette below (string)
-- "position": "top" if the subtitle appears in the top half of the frame, "bottom" if in the bottom half (string)
-- "alignment": "left", "center", or "right" — the text's horizontal alignment (string)
+Each element in the "subtitles" array must be a JSON object with these fields:
+- "text": exact text content (string) — REQUIRED
+- "style": one of "regular", "italic" (string) — default: "regular"
+- "color": text fill color name chosen from the palette below (string) — default: "white"
+- "position": "top" if the subtitle appears in the top half of the frame, "bottom" if in the bottom half (string) — default: "bottom"
 
 Color palette — use the name, not the hex value:
 - white (#FFFFFF)
 - yellow (#FFFF00)
 - cyan (#00FFFF)
-- black (#000000)
-- gray (#808080)
 
-If the color does not match any palette entry, use "other".\
+If the color does not match any palette entry, use "other".
+
+Never include the same subtitle text more than once in the array.\
 """
 
 PREFILTER_PROMPT = 'Is there text visible in this image? Return only a JSON object: {"has_text": true} or {"has_text": false}.'

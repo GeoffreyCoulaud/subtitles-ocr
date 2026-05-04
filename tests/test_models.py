@@ -1,8 +1,11 @@
 import json
+import pytest
 from pathlib import Path
+from pydantic import ValidationError
 from subtitles_ocr.models import (
     Frame, VideoInfo, FrameGroup,
     SubtitleElement, FrameAnalysis, SubtitleEvent,
+    SUBTITLE_PALETTE,
 )
 
 
@@ -27,39 +30,20 @@ def test_subtitle_element_resolves_color_name_to_hex():
         text="Bonjour",
         style="regular",
         color="white",
-        border_color="black",
         position="bottom",
-        alignment="center",
     )
     assert element.text == "Bonjour"
     assert element.color == "#FFFFFF"
-    assert element.border_color == "#000000"
 
 
-def test_subtitle_element_unknown_color_defaults():
+def test_subtitle_element_unknown_color_defaults_to_white():
     element = SubtitleElement(
         text="Test",
         style="regular",
         color="other",
-        border_color="other",
         position="bottom",
-        alignment="center",
     )
     assert element.color == "#FFFFFF"
-    assert element.border_color == "#000000"
-
-
-def test_subtitle_element_colors_default_independently():
-    element = SubtitleElement(
-        text="Test",
-        style="regular",
-        color="yellow",
-        border_color="other",
-        position="bottom",
-        alignment="center",
-    )
-    assert element.color == "#FFFF00"
-    assert element.border_color == "#000000"
 
 
 def test_frame_analysis_empty_elements():
@@ -76,9 +60,7 @@ def test_subtitle_event_roundtrip():
                 text="Test",
                 style="regular",
                 color="yellow",
-                border_color="cyan",
                 position="bottom",
-                alignment="center",
             )
         ],
     )
@@ -86,7 +68,6 @@ def test_subtitle_event_roundtrip():
     restored = SubtitleEvent.model_validate(data)
     assert restored.elements[0].text == "Test"
     assert restored.elements[0].color == "#FFFF00"
-    assert restored.elements[0].border_color == "#00FFFF"
 
 
 def test_video_info_roundtrip():
@@ -96,3 +77,43 @@ def test_video_info_roundtrip():
     assert restored.width == 1920
     assert restored.height == 1080
     assert abs(restored.fps - 23.976) < 1e-6
+
+
+# --- New schema: border_color and alignment removed, bold removed, black/gray removed ---
+
+def test_subtitle_element_valid_with_four_fields():
+    element = SubtitleElement(text="Bonjour", style="regular", color="white", position="bottom")
+    assert element.text == "Bonjour"
+    assert element.color == "#FFFFFF"
+
+
+def test_subtitle_element_rejects_bold_style():
+    with pytest.raises(ValidationError):
+        SubtitleElement(text="Test", style="bold", color="white", position="bottom")
+
+
+def test_subtitle_palette_excludes_black():
+    assert "black" not in SUBTITLE_PALETTE
+
+
+def test_subtitle_palette_excludes_gray():
+    assert "gray" not in SUBTITLE_PALETTE
+
+
+# --- Defaults: text is the only required field ---
+
+def test_subtitle_element_text_only_is_valid():
+    element = SubtitleElement(text="Bonjour")
+    assert element.text == "Bonjour"
+
+
+def test_subtitle_element_style_defaults_to_regular():
+    assert SubtitleElement(text="Test").style == "regular"
+
+
+def test_subtitle_element_color_defaults_to_white():
+    assert SubtitleElement(text="Test").color == "#FFFFFF"
+
+
+def test_subtitle_element_position_defaults_to_bottom():
+    assert SubtitleElement(text="Test").position == "bottom"

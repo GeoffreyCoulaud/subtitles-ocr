@@ -52,9 +52,9 @@ def analyze_group(
         log.info("analyze [%s] (no elements)", group.frame.name)
     for el in elements:
         log.info(
-            "analyze [%s] %-7s %-7s %-7s %-7s %-7s | %s",
+            "analyze [%s] %-7s %-7s %-7s | %s",
             group.frame.name,
-            el.position, el.alignment, el.color, el.border_color, el.style,
+            el.position, el.color, el.style,
             el.text,
         )
     return FrameAnalysis(

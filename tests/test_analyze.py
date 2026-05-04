@@ -12,9 +12,7 @@ VALID_ELEMENT = {
     "text": "Bonjour",
     "style": "regular",
     "color": "white",
-    "border_color": "black",
     "position": "bottom",
-    "alignment": "center",
 }
 
 WRAPPED_VALID = json.dumps({"subtitles": [VALID_ELEMENT]})
@@ -78,7 +76,7 @@ def test_parse_elements_subtitles_not_list_raises():
 
 def test_parse_elements_any_invalid_item_raises():
     """Any invalid item in 'subtitles' is a format error — raise so retry can trigger."""
-    raw = json.dumps({"subtitles": [VALID_ELEMENT, {"text": "Bad"}]})
+    raw = json.dumps({"subtitles": [VALID_ELEMENT, {"text": "Bad", "style": "superboldbig"}]})
     with pytest.raises(ValueError, match="invalid item"):
         parse_elements(raw)
 
@@ -101,6 +99,25 @@ def test_parse_elements_garbage_dict_raises():
 def test_parse_elements_empty_object_returns_empty():
     """Empty dict {} is the model's fallback empty signal — treat as no subtitles, no retry."""
     assert parse_elements("{}") == []
+
+
+def test_parse_elements_accepts_four_field_item():
+    """After schema simplification, border_color and alignment are not required."""
+    raw = json.dumps({"subtitles": [{"text": "Bonjour", "style": "regular", "color": "white", "position": "bottom"}]})
+    elements = parse_elements(raw)
+    assert len(elements) == 1
+    assert elements[0].text == "Bonjour"
+
+
+def test_parse_elements_accepts_text_only_item():
+    """text is the only required field — missing style/color/position use defaults."""
+    raw = json.dumps({"subtitles": [{"text": "Je ne devrais plus le lire, non ?"}]})
+    elements = parse_elements(raw)
+    assert len(elements) == 1
+    assert elements[0].text == "Je ne devrais plus le lire, non ?"
+    assert elements[0].style == "regular"
+    assert elements[0].color == "#FFFFFF"
+    assert elements[0].position == "bottom"
 
 
 def test_parse_elements_strips_json_code_fence():
