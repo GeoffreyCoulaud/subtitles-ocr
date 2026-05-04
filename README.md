@@ -80,6 +80,9 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 | `--gap-tolerance`        | `0.5`                    | Max gap in seconds to bridge between similar events                                        |
 | `--skip`                 | —                        | Skip frames in this time range (`HH:MM:SS`, `MM:SS`, or `SS`). Can be repeated for multiple ranges. |
 | `--inference-url`        | `http://localhost:11434` | Base URL of the OpenAI-compatible inference server                                         |
+| `--retry-max-attempts`   | `10`                     | Max retry attempts per element for LLM calls                                               |
+| `--retry-base-delay`     | `1.0`                    | Base delay in seconds for exponential backoff                                              |
+| `--retry-max-delay`      | `30.0`                   | Maximum delay cap in seconds for retry backoff                                             |
 
 ### Example
 

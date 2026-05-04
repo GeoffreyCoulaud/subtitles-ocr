@@ -17,6 +17,8 @@ from subtitles_ocr.pipeline.group import group_events
 from subtitles_ocr.pipeline.fuzzy_group import fuzzy_group_events
 from subtitles_ocr.pipeline.reconcile import reconcile_groups
 from subtitles_ocr.pipeline.serialize import build_ass_content
+from subtitles_ocr.pipeline.retry import RetryConfig
+from subtitles_ocr.pipeline.resume import resume_from_jsonl
 from subtitles_ocr.vlm.client import OllamaClient
 from subtitles_ocr.vlm.prompt import SYSTEM_PROMPT, PREFILTER_PROMPT
 from subtitles_ocr.litellm_config import get_workers_from_litellm
@@ -59,8 +61,7 @@ def _resolve_workers(model: str, explicit: int | None, config: Path | None, defa
 @click.option("--analyze-model", default="qwen2.5vl:3b",
               help="Model for VLM analysis (default: qwen2.5vl:3b)")
 @click.option("--analyze-workers", default=None, type=click.IntRange(min=1),
-              help="Parallel workers for VLM analysis (default: 1). "
-                   "Values > 1 require OLLAMA_NUM_PARALLEL >= value in the Ollama env.")
+              help="Parallel workers for VLM analysis (default: 1).")
 @click.option("--reconcile-model", default="gemma3:1b-it-qat",
               help="Model for text reconciliation (default: gemma3:1b-it-qat)")
 @click.option("--reconcile-workers", default=None, type=click.IntRange(min=1),
@@ -74,10 +75,15 @@ def _resolve_workers(model: str, explicit: int | None, config: Path | None, defa
 @click.option("--inference-url", default="http://localhost:11434",
               help="Base URL of the OpenAI-compatible inference server (default: http://localhost:11434)")
 @click.option("--litellm-config", default=None, type=click.Path(exists=True, dir_okay=False, path_type=Path),
-              help="Path to a litellm.yaml; auto-derives worker counts per model "
-                   "(overrides defaults, overridden by explicit --*-workers flags)")
+              help="Path to a litellm.yaml; auto-derives worker counts per model")
 @click.option("--skip", "skip_ranges_raw", multiple=True, metavar="START-END",
               help="Skip frames in this time range (HH:MM:SS, MM:SS, or SS). Can be repeated.")
+@click.option("--retry-max-attempts", default=10, type=click.IntRange(min=1),
+              help="Max retry attempts per element for LLM calls (default: 10)")
+@click.option("--retry-base-delay", default=1.0, type=click.FloatRange(min=0.0),
+              help="Base delay in seconds for exponential backoff (default: 1.0)")
+@click.option("--retry-max-delay", default=30.0, type=click.FloatRange(min=0.0),
+              help="Maximum delay cap in seconds for retry backoff (default: 30.0)")
 @click.option("--debug", is_flag=True, default=False,
               help="Enable debug logging (VLM model outputs, etc.)")
 def cli(
@@ -96,6 +102,9 @@ def cli(
     inference_url: str,
     litellm_config: Path | None,
     skip_ranges_raw: tuple[str, ...],
+    retry_max_attempts: int,
+    retry_base_delay: float,
+    retry_max_delay: float,
     debug: bool,
 ) -> None:
     """Extract hardcoded subtitles from an anime video and produce a .ass file."""
@@ -121,6 +130,12 @@ def cli(
     filter_workers    = _resolve_workers(filter_model,    filter_workers,    litellm_config, FILTER_WORKERS_DEFAULT)
     analyze_workers   = _resolve_workers(analyze_model,   analyze_workers,   litellm_config, ANALYZE_WORKERS_DEFAULT)
     reconcile_workers = _resolve_workers(reconcile_model, reconcile_workers, litellm_config, RECONCILE_WORKERS_DEFAULT)
+
+    retry_config = RetryConfig(
+        max_attempts=retry_max_attempts,
+        base_delay=retry_base_delay,
+        max_delay=retry_max_delay,
+    )
 
     workdir.mkdir(parents=True, exist_ok=True)
     step = 0
@@ -203,26 +218,34 @@ def cli(
     # Step 4: VLM pre-filtering
     step += 1
     filter_path = workdir / f"{step:03d}-filter.jsonl"
-    filter_lines = _read_jsonl(filter_path)
+    filter_lines, remaining_for_filter = resume_from_jsonl(
+        groups, filter_path, lambda g: str(g.frame)
+    )
     filter_results: list[bool] = [json.loads(line)["has_text"] for line in filter_lines]
-    n_filter_done = len(filter_results)
-    remaining_for_filter = groups[n_filter_done:]
 
     if remaining_for_filter:
         filter_client = OllamaClient(model=filter_model, host=inference_url)
-        mode = "a" if n_filter_done > 0 else "w"
+        mode = "a" if filter_path.exists() else "w"
+        failed_filter = 0
         with filter_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
             for group, has_text in zip(
                 remaining_for_filter,
                 tqdm(
-                    prefilter_groups(remaining_for_filter, filter_client, PREFILTER_PROMPT, filter_workers),
+                    prefilter_groups(remaining_for_filter, filter_client, PREFILTER_PROMPT, filter_workers, retry_config),
                     total=len(remaining_for_filter),
                     desc=f"[4/9] Pre-filtering ({filter_model})",
                     unit="group",
                 ),
             ):
-                f.write(json.dumps({"frame": str(group.frame), "has_text": has_text}) + "\n")
-                filter_results.append(has_text)
+                if has_text is None:
+                    failed_filter += 1
+                else:
+                    f.write(json.dumps({"id": str(group.frame), "has_text": has_text}) + "\n")
+                    filter_results.append(has_text)
+        if failed_filter:
+            raise click.ClickException(
+                f"[4/9] {failed_filter} group(s) failed pre-filter after max retries. Resume to retry."
+            )
         kept = sum(filter_results)
         click.echo(f"      {kept}/{len(groups)} groups kept for analysis.")
     else:
@@ -231,32 +254,38 @@ def cli(
     # Step 5: VLM analysis
     step += 1
     analysis_path = workdir / f"{step:03d}-analysis.jsonl"
-    assert len(filter_results) == len(groups), (
-        f"filter.jsonl has {len(filter_results)} entries but groups.jsonl has "
-        f"{len(groups)} — delete filter.jsonl to rerun pre-filtering."
+    filter_by_id = {json.loads(line)["id"]: json.loads(line)["has_text"] for line in _read_jsonl(filter_path)}
+    analysis_lines, remaining_groups = resume_from_jsonl(
+        groups, analysis_path, lambda g: str(g.frame)
     )
-    analysis_lines = _read_jsonl(analysis_path)
     analyses: list[FrameAnalysis] = [FrameAnalysis.model_validate_json(line) for line in analysis_lines]
-    n_analysis_done = len(analyses)
-    assert n_analysis_done <= len(groups), (
-        f"analysis.jsonl has {n_analysis_done} entries but groups.jsonl has "
-        f"{len(groups)} — delete analysis.jsonl to rerun analysis."
-    )
-    remaining_groups = groups[n_analysis_done:]
-    remaining_filter = filter_results[n_analysis_done:]
+    remaining_filter = [filter_by_id[str(g.frame)] for g in remaining_groups]
 
     if remaining_groups:
         client = OllamaClient(model=analyze_model, host=inference_url)
-        mode = "a" if n_analysis_done > 0 else "w"
+        mode = "a" if analysis_path.exists() else "w"
+        failed_analyze = 0
         with analysis_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
-            for analysis in tqdm(
-                analyze_groups(remaining_groups, remaining_filter, client, SYSTEM_PROMPT, analyze_workers),
-                total=len(remaining_groups),
-                desc=f"[5/9] VLM analysis ({analyze_model})",
-                unit="group",
+            for group, analysis in zip(
+                remaining_groups,
+                tqdm(
+                    analyze_groups(remaining_groups, remaining_filter, client, SYSTEM_PROMPT, analyze_workers, retry_config),
+                    total=len(remaining_groups),
+                    desc=f"[5/9] VLM analysis ({analyze_model})",
+                    unit="group",
+                ),
             ):
-                f.write(analysis.model_dump_json() + "\n")
-                analyses.append(analysis)
+                if analysis is None:
+                    failed_analyze += 1
+                else:
+                    data = analysis.model_dump(mode="json")
+                    data["id"] = str(group.frame)
+                    f.write(json.dumps(data) + "\n")
+                    analyses.append(analysis)
+        if failed_analyze:
+            raise click.ClickException(
+                f"[5/9] {failed_analyze} group(s) failed analysis after max retries. Resume to retry."
+            )
     else:
         click.echo("[5/9] Analysis skipped (resuming).")
 
@@ -302,27 +331,36 @@ def cli(
     # Step 8: reconciliation
     step += 1
     reconciled_path = workdir / f"{step:03d}-reconciled.jsonl"
-    reconciled_lines = _read_jsonl(reconciled_path)
-    reconciled: list[SubtitleEvent] = [SubtitleEvent.model_validate_json(line) for line in reconciled_lines]
-    n_reconciled_done = len(reconciled)
-    assert n_reconciled_done <= len(fuzzy_groups), (
-        f"reconciled.jsonl has {n_reconciled_done} entries but fuzzy_groups.jsonl has "
-        f"{len(fuzzy_groups)} — delete reconciled.jsonl to rerun reconciliation."
+    reconciled_lines, remaining_clusters = resume_from_jsonl(
+        fuzzy_groups, reconciled_path, lambda cluster: str(cluster[0].start_time)
     )
-    remaining_clusters = fuzzy_groups[n_reconciled_done:]
+    reconciled: list[SubtitleEvent] = [SubtitleEvent.model_validate_json(line) for line in reconciled_lines]
 
     if remaining_clusters:
         reconcile_client = OllamaClient(model=reconcile_model, host=inference_url)
-        mode = "a" if n_reconciled_done > 0 else "w"
+        mode = "a" if reconciled_path.exists() else "w"
+        failed_reconcile = 0
         with reconciled_path.open(mode, encoding="utf-8") as f, logging_redirect_tqdm():
-            for event in tqdm(
-                reconcile_groups(remaining_clusters, reconcile_client, reconcile_workers),
-                total=len(remaining_clusters),
-                desc=f"[8/9] Reconciliation ({reconcile_model})",
-                unit="group",
+            for cluster, event in zip(
+                remaining_clusters,
+                tqdm(
+                    reconcile_groups(remaining_clusters, reconcile_client, reconcile_workers, retry_config),
+                    total=len(remaining_clusters),
+                    desc=f"[8/9] Reconciliation ({reconcile_model})",
+                    unit="group",
+                ),
             ):
-                f.write(event.model_dump_json() + "\n")
-                reconciled.append(event)
+                if event is None:
+                    failed_reconcile += 1
+                else:
+                    data = event.model_dump(mode="json")
+                    data["id"] = str(cluster[0].start_time)
+                    f.write(json.dumps(data) + "\n")
+                    reconciled.append(event)
+        if failed_reconcile:
+            raise click.ClickException(
+                f"[8/9] {failed_reconcile} cluster(s) failed reconciliation after max retries. Resume to retry."
+            )
     else:
         click.echo("[8/9] Reconciliation skipped (resuming).")
 
