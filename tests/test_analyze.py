@@ -69,6 +69,34 @@ def test_parse_elements_partial_invalid_keeps_valid():
     assert elements[0].text == "Bonjour"
 
 
+def test_parse_elements_all_invalid_raises():
+    """Garbage output (valid JSON but no item passes schema) must raise so retry can trigger."""
+    garbage = {"]0E@#@$&,FB8$.-B2=A3F766=E+*9*)?2AC@3#1F9B.0": "#)8#-.:"}
+    with pytest.raises(ValueError, match="all.*failed"):
+        parse_elements(json.dumps(garbage))
+
+
+def test_parse_elements_empty_array_does_not_raise():
+    """True empty response (no subtitles) must stay silent — don't confuse with garbage."""
+    assert parse_elements("[]") == []
+
+
+def test_parse_elements_empty_object_returns_empty():
+    """Empty dict {} is the model saying 'nothing here' — treat as [] without retrying."""
+    assert parse_elements("{}") == []
+
+
+def test_analyze_groups_does_not_retry_empty_object():
+    """When model returns {}, accept it as no-subtitle frame on the first attempt; do not retry."""
+    client = MagicMock()
+    client.analyze.return_value = "{}"
+    result = list(analyze_groups([_group()], [True], client, "p", workers=1, retry_config=_no_retry()))
+    assert len(result) == 1
+    assert result[0] is not None
+    assert result[0].elements == []
+    assert client.analyze.call_count == 1
+
+
 # --- analyze_group ---
 
 def test_analyze_group_returns_correct_timing():
@@ -199,6 +227,20 @@ def test_analyze_groups_empty_returns_empty():
     client = MagicMock()
     result = list(analyze_groups([], [], client, "p", workers=1, retry_config=_no_retry()))
     assert result == []
+
+
+def test_analyze_groups_retries_on_all_invalid_items():
+    """When the model returns garbage JSON, analyze_groups must retry rather than silently yield empty."""
+    client = MagicMock()
+    garbage = json.dumps({"]0E@#@$&,FB8$.-B2=A3F766=E+*9*)?2AC@3#1F9B.0": "#)8#-.:"})
+    valid = json.dumps([VALID_ELEMENT])
+    client.analyze.side_effect = [garbage, valid]
+    retry_config = RetryConfig(max_attempts=2)
+    with patch("subtitles_ocr.pipeline.retry.time.sleep"):
+        result = list(analyze_groups([_group()], [True], client, "p", workers=1, retry_config=retry_config))
+    assert result[0] is not None
+    assert len(result[0].elements) == 1
+    assert client.analyze.call_count == 2
 
 
 def test_analyze_groups_yields_none_on_non_retryable():

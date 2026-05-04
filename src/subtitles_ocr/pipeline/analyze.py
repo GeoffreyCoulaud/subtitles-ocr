@@ -14,15 +14,21 @@ log = logging.getLogger(__name__)
 def parse_elements(raw: str) -> list[SubtitleElement]:
     data = json.loads(raw)
     if isinstance(data, dict):
+        if not data:
+            return []
         data = [data]
     if not isinstance(data, list):
         raise ValueError(f"expected JSON array or object, got {type(data).__name__}: {raw!r}")
     result = []
+    skipped = 0
     for item in data:
         try:
             result.append(SubtitleElement.model_validate(item))
         except ValueError:
             log.debug("parse_elements: skipping invalid item: %r", item)
+            skipped += 1
+    if skipped > 0 and not result:
+        raise ValueError(f"parse_elements: all {skipped} item(s) failed schema validation")
     return result
 
 
