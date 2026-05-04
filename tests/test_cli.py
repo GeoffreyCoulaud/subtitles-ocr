@@ -211,3 +211,66 @@ def test_resolve_workers_config_used_when_no_explicit(tmp_path):
         result = _resolve_workers("llava:7b", explicit=None, config=config, default=FILTER_WORKERS_DEFAULT)
     assert result == 12
     mock.assert_called_once_with(config, "llava:7b")
+
+
+def test_skip_filters_frames_in_range(tmp_path):
+    """When --skip 0-1 is passed, frames with timestamps in [0.0, 1.0] are dropped."""
+    video = tmp_path / "v.mkv"
+    video.write_bytes(b"fake")
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    frames_dir = workdir / "001-frames"
+    frames_dir.mkdir()
+
+    # Create frames at timestamps 0.0, 0.5, 1.0, and 2.0
+    manifest = [
+        {"path": str(frames_dir / "000001.jpg"), "timestamp": 0.0},
+        {"path": str(frames_dir / "000002.jpg"), "timestamp": 0.5},
+        {"path": str(frames_dir / "000003.jpg"), "timestamp": 1.0},
+        {"path": str(frames_dir / "000004.jpg"), "timestamp": 2.0},
+    ]
+    (workdir / "001-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (workdir / "001-video_info.json").write_text(
+        '{"width": 1920, "height": 1080, "fps": 24.0}', encoding="utf-8"
+    )
+    # Note: do NOT pre-seed 002-filtered_manifest.json — let step 2 run
+
+    with patch("subtitles_ocr.cli.extract_frames"), \
+         patch("subtitles_ocr.cli.compute_groups", return_value=[]), \
+         patch("subtitles_ocr.cli.prefilter_groups", return_value=[]), \
+         patch("subtitles_ocr.cli.analyze_groups", return_value=[]), \
+         patch("subtitles_ocr.cli.build_ass_content", return_value=""):
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            str(video), "--workdir", str(workdir),
+            "--output", str(tmp_path / "out.ass"),
+            "--skip", "0-1",
+        ])
+
+    # Verify the CLI succeeded
+    assert result.exit_code == 0, f"CLI failed: {result.output}"
+
+    # Read the filtered manifest and verify only the frame at t=2.0 remains
+    filtered_manifest_path = workdir / "002-filtered_manifest.json"
+    assert filtered_manifest_path.exists(), "002-filtered_manifest.json should be created"
+    filtered = json.loads(filtered_manifest_path.read_text(encoding="utf-8"))
+    assert len(filtered) == 1, f"Expected 1 frame, got {len(filtered)}"
+    assert filtered[0]["timestamp"] == 2.0, f"Expected timestamp 2.0, got {filtered[0]['timestamp']}"
+
+
+def test_skip_invalid_range_exits_with_error(tmp_path):
+    """Invalid --skip range (abc-xyz) causes CLI to exit with non-zero exit code."""
+    video = tmp_path / "v.mkv"
+    video.write_bytes(b"fake")
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        str(video), "--workdir", str(workdir),
+        "--output", str(tmp_path / "out.ass"),
+        "--skip", "abc-xyz",
+    ])
+
+    # Verify the CLI exited with non-zero exit code
+    assert result.exit_code != 0, f"CLI should fail for invalid skip range, but exited with {result.exit_code}"
