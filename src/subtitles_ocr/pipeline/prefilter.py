@@ -16,8 +16,10 @@ def prefilter_groups(
     client: OllamaClient,
     prompt: str,
     workers: int,
-    retry_config: RetryConfig = RetryConfig(),
+    retry_config: RetryConfig | None = None,
 ) -> Generator[bool | None, None, None]:
+    if retry_config is None:
+        retry_config = RetryConfig()
     def classify(group: FrameGroup) -> bool | None:
         def _attempt() -> bool:
             response = client.analyze(group.frame, prompt, json_mode=True)

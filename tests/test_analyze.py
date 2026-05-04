@@ -199,3 +199,11 @@ def test_analyze_groups_empty_returns_empty():
     client = MagicMock()
     result = list(analyze_groups([], [], client, "p", workers=1, retry_config=_no_retry()))
     assert result == []
+
+
+def test_analyze_groups_yields_none_on_non_retryable():
+    client = MagicMock()
+    client.analyze.side_effect = OSError("disk error")
+    result = list(analyze_groups([_group()], [True], client, "p", workers=1, retry_config=_no_retry()))
+    assert result == [None]
+    assert client.analyze.call_count == 1

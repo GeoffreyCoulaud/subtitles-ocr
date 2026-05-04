@@ -21,7 +21,7 @@ def parse_elements(raw: str) -> list[SubtitleElement]:
     for item in data:
         try:
             result.append(SubtitleElement.model_validate(item))
-        except Exception:
+        except ValueError:
             log.debug("parse_elements: skipping invalid item: %r", item)
     return result
 
@@ -56,8 +56,10 @@ def analyze_groups(
     client: OllamaClient,
     prompt: str,
     workers: int,
-    retry_config: RetryConfig = RetryConfig(),
+    retry_config: RetryConfig | None = None,
 ) -> Generator[FrameAnalysis | None, None, None]:
+    if retry_config is None:
+        retry_config = RetryConfig()
     def process(group: FrameGroup, has_text: bool) -> FrameAnalysis | None:
         if not has_text:
             return FrameAnalysis(
