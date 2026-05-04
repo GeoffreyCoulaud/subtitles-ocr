@@ -15,6 +15,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Keep `README.md` up to date.** Any change that affects documented behavior — pipeline steps, model names or sizes, CLI options, intermediate file names — must be reflected in the README in the same commit.
 - **Skip spec review for TDD tasks.** Passing tests prove spec compliance — a separate spec review is redundant.
 - **Code quality review is only required when the task produces executable logic** (functions, branches, conditionals). Skip it for dependency additions, doc-only edits, renames, and config-only changes.
+- **Implementer subagents must invoke `superpowers:test-driven-development` before writing any production code.** No production code without a failing test first. This applies to every task, every time.
+- **Code quality reviewers must not execute code.** Reviews are static: read the diff and the test files, identify every behavior and branch in the production code, and flag any that lack a corresponding test assertion. Running the test suite or print-only scripts is forbidden — that is the implementer's job.
 
 ## Commands
 
