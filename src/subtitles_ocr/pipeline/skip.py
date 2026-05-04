@@ -59,3 +59,13 @@ def normalize_ranges(ranges: list[tuple[float, float]]) -> list[tuple[float, flo
             current_start, current_end = start, end
     result.append((current_start, current_end))
     return result
+
+
+def filter_frames(frames: list[Frame], skip_ranges: list[tuple[float, float]]) -> list[Frame]:
+    """Return frames whose timestamp does not fall within any skip range (inclusive)."""
+    if not skip_ranges:
+        return frames
+    return [
+        f for f in frames
+        if not any(start <= f.timestamp <= end for start, end in skip_ranges)
+    ]

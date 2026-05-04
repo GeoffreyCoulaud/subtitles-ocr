@@ -1,5 +1,7 @@
 import pytest
-from subtitles_ocr.pipeline.skip import parse_time, format_time, parse_skip_range, normalize_ranges
+from pathlib import Path
+from subtitles_ocr.models import Frame
+from subtitles_ocr.pipeline.skip import parse_time, format_time, parse_skip_range, normalize_ranges, filter_frames
 
 
 class TestParseTime:
@@ -98,3 +100,32 @@ class TestNormalizeRanges:
 
     def test_out_of_order_overlapping_merged(self):
         assert normalize_ranges([(100.0, 200.0), (0.0, 150.0)]) == [(0.0, 200.0)]
+
+
+def _frame(ts: float) -> Frame:
+    return Frame(path=Path(f"frame_{ts}.jpg"), timestamp=ts)
+
+
+class TestFilterFrames:
+    def test_no_ranges_keeps_all(self):
+        frames = [_frame(0.0), _frame(1.0), _frame(2.0)]
+        assert filter_frames(frames, []) == frames
+
+    def test_range_covering_all_drops_all(self):
+        frames = [_frame(0.0), _frame(1.0), _frame(2.0)]
+        assert filter_frames(frames, [(0.0, 2.0)]) == []
+
+    def test_partial_drop(self):
+        frames = [_frame(0.0), _frame(1.0), _frame(2.0), _frame(3.0)]
+        result = filter_frames(frames, [(1.0, 2.0)])
+        assert [f.timestamp for f in result] == [0.0, 3.0]
+
+    def test_boundary_inclusive_dropped(self):
+        frames = [_frame(0.0), _frame(1.0), _frame(2.0)]
+        result = filter_frames(frames, [(1.0, 2.0)])
+        assert [f.timestamp for f in result] == [0.0]
+
+    def test_multiple_ranges(self):
+        frames = [_frame(float(i)) for i in range(6)]
+        result = filter_frames(frames, [(1.0, 2.0), (4.0, 5.0)])
+        assert [f.timestamp for f in result] == [0.0, 3.0]
