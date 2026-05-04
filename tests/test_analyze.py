@@ -76,18 +76,18 @@ def test_parse_elements_subtitles_not_list_raises():
         parse_elements(json.dumps({"subtitles": "not a list"}))
 
 
-def test_parse_elements_partial_invalid_keeps_valid():
+def test_parse_elements_any_invalid_item_raises():
+    """Any invalid item in 'subtitles' is a format error — raise so retry can trigger."""
     raw = json.dumps({"subtitles": [VALID_ELEMENT, {"text": "Bad"}]})
-    elements = parse_elements(raw)
-    assert len(elements) == 1
-    assert elements[0].text == "Bonjour"
+    with pytest.raises(ValueError, match="invalid item"):
+        parse_elements(raw)
 
 
 def test_parse_elements_all_subtitles_items_invalid_raises():
     """When every item in 'subtitles' fails schema validation, raise so retry can trigger."""
     garbage_item = {"]0E@#@$&": "#)8#-.:"}
     raw = json.dumps({"subtitles": [garbage_item]})
-    with pytest.raises(ValueError, match="all.*failed"):
+    with pytest.raises(ValueError, match="invalid item"):
         parse_elements(raw)
 
 

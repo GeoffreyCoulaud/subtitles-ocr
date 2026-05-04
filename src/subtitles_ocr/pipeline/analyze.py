@@ -32,15 +32,11 @@ def parse_elements(raw: str) -> list[SubtitleElement]:
     if not isinstance(items, list):
         raise ValueError(f"parse_elements: 'subtitles' must be a list, got {type(items).__name__}: {raw!r}")
     result = []
-    skipped = 0
     for item in items:
         try:
             result.append(SubtitleElement.model_validate(item))
         except ValueError:
-            log.debug("parse_elements: skipping invalid item: %r", item)
-            skipped += 1
-    if skipped > 0 and not result:
-        raise ValueError(f"parse_elements: all {skipped} item(s) failed schema validation")
+            raise ValueError(f"parse_elements: invalid item in 'subtitles': {item!r}")
     return result
 
 
