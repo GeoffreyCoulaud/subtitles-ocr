@@ -12,20 +12,19 @@ class OllamaClient:
         self.model = model
         self._client = OpenAI(base_url=f"{host}/v1", api_key="ollama")
 
-    def analyze(self, image_path: Path, prompt: str, json_mode: bool = False) -> str:
+    def analyze(self, image_path: Path, prompt: str = "", system: str = "") -> str:
         image_data = image_path.read_bytes()
         b64 = base64.b64encode(image_data).decode()
-        kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        user_content: list = [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]
+        if prompt:
+            user_content.insert(0, {"type": "text", "text": prompt})
+        messages.append({"role": "user", "content": user_content})
         response = self._client.chat.completions.create(
             model=self.model,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-                ],
-            }],
-            **kwargs,
+            messages=messages,
         )
         content = response.choices[0].message.content
         if not content:

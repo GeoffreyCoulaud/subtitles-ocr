@@ -72,6 +72,30 @@ def test_analyze_propagates_openai_exceptions():
                 client.analyze(Path("frame.jpg"), "prompt")
 
 
+def test_analyze_with_system_sends_system_role_first():
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.return_value = _make_response("{}")
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
+        with patch.object(Path, "read_bytes", return_value=b"image_data"):
+            client = OllamaClient(model="test-model")
+            client.analyze(Path("frame.jpg"), system="sys prompt")
+    messages = mock_openai.chat.completions.create.call_args.kwargs["messages"]
+    assert messages[0] == {"role": "system", "content": "sys prompt"}
+
+
+def test_analyze_with_system_user_message_contains_only_image():
+    mock_openai = MagicMock()
+    mock_openai.chat.completions.create.return_value = _make_response("{}")
+    with patch("subtitles_ocr.vlm.client.OpenAI", return_value=mock_openai):
+        with patch.object(Path, "read_bytes", return_value=b"image_data"):
+            client = OllamaClient(model="test-model")
+            client.analyze(Path("frame.jpg"), system="sys prompt")
+    messages = mock_openai.chat.completions.create.call_args.kwargs["messages"]
+    user_content = messages[1]["content"]
+    assert len(user_content) == 1
+    assert user_content[0]["type"] == "image_url"
+
+
 def test_chat_returns_text_response():
     mock_openai = MagicMock()
     mock_openai.chat.completions.create.return_value = _make_response("Bonjour tout le monde")

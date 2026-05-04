@@ -6,11 +6,11 @@ Extract ALL French subtitle text visible in this image. Do NOT extract:
 - Text that is part of the original animation artwork
 - French translations of in-scene text (signs, posters, props, backgrounds)
 
-For each French subtitle element return a JSON object.
-Return ONLY a JSON array — no explanation, no markdown, no code fences.
-If no French subtitles are visible, return: []
+Return ONLY a raw JSON object — no markdown, no code fences, no explanation. Start your response with { and end with }. Use this exact format:
+{"subtitles": [{"text": "...", "style": "...", "color": "...", "border_color": "...", "position": "...", "alignment": "..."}, ...]}
+If no French subtitles are visible, return: {"subtitles": []}
 
-Each element must have exactly these fields:
+Each element in the "subtitles" array must be a JSON object with exactly these fields:
 - "text": exact text content (string)
 - "style": one of "regular", "bold", "italic" (string)
 - "color": text fill color name chosen from the palette below (string)

@@ -11,17 +11,30 @@ from subtitles_ocr.pipeline.retry import RetryConfig, RetryExhausted, NonRetryab
 log = logging.getLogger(__name__)
 
 
+def _strip_code_fence(raw: str) -> str:
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else ""
+        if raw.endswith("```"):
+            raw = raw[: raw.rfind("```")].rstrip()
+    return raw
+
+
 def parse_elements(raw: str) -> list[SubtitleElement]:
+    raw = _strip_code_fence(raw)
     data = json.loads(raw)
-    if isinstance(data, dict):
-        if not data:
-            return []
-        data = [data]
-    if not isinstance(data, list):
-        raise ValueError(f"expected JSON array or object, got {type(data).__name__}: {raw!r}")
+    if not isinstance(data, dict):
+        raise ValueError(f"expected JSON object, got {type(data).__name__}: {raw!r}")
+    if not data:
+        return []
+    items = data.get("subtitles")
+    if items is None:
+        raise ValueError(f"parse_elements: missing 'subtitles' key: {raw!r}")
+    if not isinstance(items, list):
+        raise ValueError(f"parse_elements: 'subtitles' must be a list, got {type(items).__name__}: {raw!r}")
     result = []
     skipped = 0
-    for item in data:
+    for item in items:
         try:
             result.append(SubtitleElement.model_validate(item))
         except ValueError:
@@ -37,7 +50,7 @@ def analyze_group(
     client: OllamaClient,
     prompt: str,
 ) -> FrameAnalysis:
-    raw = client.analyze(group.frame, prompt, json_mode=True)
+    raw = client.analyze(group.frame, system=prompt)
     log.debug("analyze [%s] raw → %r", group.frame.name, raw)
     elements = parse_elements(raw)
     if not elements:
