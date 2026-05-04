@@ -114,6 +114,12 @@ def test_parse_elements_strips_bare_code_fence():
     assert parse_elements(raw) == []
 
 
+def test_parse_elements_does_not_strip_unclosed_code_fence():
+    """Prefix without matching suffix must not be partially stripped — raise JSONDecodeError."""
+    with pytest.raises(json.JSONDecodeError):
+        parse_elements('```json\n{"subtitles": []}')  # no closing ```
+
+
 def test_analyze_groups_does_not_retry_empty_object():
     """When model returns {}, accept it as no-subtitle frame on the first attempt; do not retry."""
     client = MagicMock()

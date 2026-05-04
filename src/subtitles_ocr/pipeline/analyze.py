@@ -13,10 +13,9 @@ log = logging.getLogger(__name__)
 
 def _strip_code_fence(raw: str) -> str:
     raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1] if "\n" in raw else ""
-        if raw.endswith("```"):
-            raw = raw[: raw.rfind("```")].rstrip()
+    for prefix in ("```json", "```"):
+        if raw.startswith(prefix) and raw.endswith("```"):
+            return raw.removeprefix(prefix).removesuffix("```").strip()
     return raw
 
 
