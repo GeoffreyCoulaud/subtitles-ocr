@@ -23,7 +23,7 @@ The pipeline runs 9 sequential steps:
 | 2    | Frame filter   | Frames within any `--skip` range are dropped; remaining frames are written to `002-filtered_manifest.json`                                        |
 | 3    | pHash filter   | Consecutive frames with an identical perceptual hash are collapsed into one group                                                                 |
 | 4    | Pre-filter     | `llava:7b` classifies each group as containing text or not — fast binary pass to skip blank frames                                                |
-| 5    | Analyze        | `qwen2.5vl:3b` extracts text, style, color, and position from each text-bearing group                                                            |
+| 5    | Analyze        | `qwen3-vl:4b` extracts text, style, color, and position from each text-bearing group                                                             |
 | 6    | Group events   | Consecutive identical analyses are merged into subtitle events                                                                                    |
 | 7    | Fuzzy group    | Similar events are clustered using trigram similarity; short gaps between similar events are bridged                                              |
 | 8    | Reconcile      | Each cluster is collapsed into one canonical event — `gemma3:1b-it-qat` reconciles noisy text readings; majority vote picks style/color           |
@@ -70,7 +70,7 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 | `-w`, `--workdir`        | `<video>_subtitles_ocr/` | Directory for intermediate files                                                           |
 | `--filter-model`         | `llava:7b`               | Model for pre-filtering                                                                    |
 | `--filter-workers`       | `4`                      | Parallel workers for pre-filtering                                                         |
-| `--analyze-model`        | `qwen2.5vl:3b`           | Model for VLM analysis                                                                     |
+| `--analyze-model`        | `qwen3-vl:4b`            | Model for VLM analysis                                                                     |
 | `--analyze-workers`      | `1`                      | Parallel workers for VLM analysis (requires `OLLAMA_NUM_PARALLEL` ≥ value in Ollama's env) |
 | `--reconcile-model`      | `gemma3:1b-it-qat`       | Model for text reconciliation                                                              |
 | `--reconcile-workers`    | `8`                      | Parallel workers for reconciliation                                                        |

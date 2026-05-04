@@ -58,8 +58,8 @@ def _resolve_workers(model: str, explicit: int | None, config: Path | None, defa
               help="Model for pre-filtering (default: llava:7b)")
 @click.option("--filter-workers", default=None, type=click.IntRange(min=1),
               help="Parallel workers for pre-filtering (default: 4)")
-@click.option("--analyze-model", default="qwen2.5vl:3b",
-              help="Model for VLM analysis (default: qwen2.5vl:3b)")
+@click.option("--analyze-model", default="qwen3-vl:4b",
+              help="Model for VLM analysis (default: qwen3-vl:4b)")
 @click.option("--analyze-workers", default=None, type=click.IntRange(min=1),
               help="Parallel workers for VLM analysis (default: 1).")
 @click.option("--reconcile-model", default="gemma3:1b-it-qat",

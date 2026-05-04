@@ -5,7 +5,7 @@ The pipeline uses three models. The two vision models never coexist in VRAM — 
 | Role | Model | VRAM |
 |------|-------|------|
 | Pre-filter | `llava:7b` | 4.7 GB |
-| Analysis | `qwen2.5vl:3b` | 3.2 GB |
+| Analysis | `qwen3-vl:4b` | ~6 GB |
 | Reconciliation | `gemma3:1b-it-qat` | 1.0 GB |
 
 All three can be overridden with `--filter-model`, `--analyze-model`, and `--reconcile-model`.
@@ -16,7 +16,7 @@ The tool talks to any OpenAI-compatible inference server via `--inference-url` (
 
 ```bash
 ollama pull llava:7b
-ollama pull qwen2.5vl:3b
+ollama pull qwen3-vl:4b
 ollama pull gemma3:1b-it-qat
 ollama serve
 ```
@@ -57,17 +57,17 @@ model_list:
       api_base: http://big-machine:11434
       max_parallel_requests: 2
 
-  # smaller models can run on all machines
-  - model_name: qwen2.5vl:3b
+  # qwen3-vl:4b needs ~6 GiB — runs on most machines
+  - model_name: qwen3-vl:4b
     litellm_params:
-      model: ollama/qwen2.5vl:3b
+      model: ollama/qwen3-vl:4b
       api_base: http://big-machine:11434
       max_parallel_requests: 2
-  - model_name: qwen2.5vl:3b
+  - model_name: qwen3-vl:4b
     litellm_params:
-      model: ollama/qwen2.5vl:3b
+      model: ollama/qwen3-vl:4b
       api_base: http://small-machine:11434
-      max_parallel_requests: 2
+      max_parallel_requests: 1
 
   - model_name: gemma3:1b-it-qat
     litellm_params:
