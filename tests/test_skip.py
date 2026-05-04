@@ -1,5 +1,5 @@
 import pytest
-from subtitles_ocr.pipeline.skip import parse_time, format_time
+from subtitles_ocr.pipeline.skip import parse_time, format_time, parse_skip_range
 
 
 class TestParseTime:
@@ -47,3 +47,31 @@ class TestFormatTime:
 
     def test_hours(self):
         assert format_time(3661.0) == "1:01:01"
+
+
+class TestParseSkipRange:
+    def test_seconds_range(self):
+        assert parse_skip_range("0-90") == (0.0, 90.0)
+
+    def test_mm_ss_range(self):
+        assert parse_skip_range("1:30-22:00") == (90.0, 1320.0)
+
+    def test_start_equals_end_raises(self):
+        with pytest.raises(ValueError):
+            parse_skip_range("90-90")
+
+    def test_start_greater_than_end_raises(self):
+        with pytest.raises(ValueError):
+            parse_skip_range("90-0")
+
+    def test_no_separator_raises(self):
+        with pytest.raises(ValueError):
+            parse_skip_range("90")
+
+    def test_bad_start_raises(self):
+        with pytest.raises(ValueError):
+            parse_skip_range("abc-90")
+
+    def test_bad_end_raises(self):
+        with pytest.raises(ValueError):
+            parse_skip_range("0-abc")
