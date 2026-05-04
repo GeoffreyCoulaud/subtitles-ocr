@@ -1,12 +1,12 @@
+# src/subtitles_ocr/pipeline/prefilter.py
 import json
 import logging
-import sys
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Generator
 
 from subtitles_ocr.models import FrameGroup
 from subtitles_ocr.vlm.client import OllamaClient
+from subtitles_ocr.pipeline.retry import RetryConfig, RetryExhausted, NonRetryable, with_retry
 
 log = logging.getLogger(__name__)
 
@@ -16,39 +16,33 @@ def prefilter_groups(
     client: OllamaClient,
     prompt: str,
     workers: int,
-) -> Generator[bool, None, None]:
-    error_count = 0
-    lock = threading.Lock()
-
-    def classify(group: FrameGroup) -> bool:
-        nonlocal error_count
-        try:
+    retry_config: RetryConfig = RetryConfig(),
+) -> Generator[bool | None, None, None]:
+    def classify(group: FrameGroup) -> bool | None:
+        def _attempt() -> bool:
             response = client.analyze(group.frame, prompt, json_mode=True)
-            try:
-                result = json.loads(response).get("has_text")
-                if isinstance(result, str):
-                    result = {"true": True, "false": False}.get(result.lower())
-                if isinstance(result, bool):
-                    log.debug("prefilter [%s] → %s | %r", group.frame.name, result, response)
-                    return result
-            except (json.JSONDecodeError, AttributeError):
-                pass
-            log.debug("prefilter [%s] → AMBIGUOUS (kept) | %r", group.frame.name, response)
-            return True  # ambiguous → conservative, keep frame
-        except RuntimeError as e:
-            log.debug("prefilter [%s] → ERROR | %s", group.frame.name, e)
-            with lock:
-                error_count += 1
-            return True
+            data = json.loads(response)
+            if not isinstance(data, dict):
+                raise ValueError(f"expected JSON object: {response!r}")
+            result = data.get("has_text")
+            if isinstance(result, str):
+                coerced = {"true": True, "false": False}.get(result.lower())
+                if coerced is not None:
+                    return coerced
+                raise ValueError(f"unrecognized has_text string: {result!r}")
+            if isinstance(result, bool):
+                return result
+            raise ValueError(f"has_text missing or wrong type: {result!r}")
+
+        try:
+            return with_retry(_attempt, retry_config, log)
+        except NonRetryable as e:
+            log.warning("prefilter [%s] non-retryable error: %s", group.frame.name, e.__cause__)
+            return None
+        except RetryExhausted:
+            log.warning("prefilter [%s] retries exhausted", group.frame.name)
+            return None
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         for result in executor.map(classify, groups):
             yield result
-
-    if error_count > 0 and error_count == len(groups):
-        raise RuntimeError(
-            f"Pre-filter model '{client.model}' failed on all {len(groups)} groups — "
-            f"is it available? Run: ollama pull {client.model}"
-        )
-    if error_count > 0:
-        print(f"Warning: {error_count}/{len(groups)} pre-filter calls failed, kept as conservative", file=sys.stderr)
