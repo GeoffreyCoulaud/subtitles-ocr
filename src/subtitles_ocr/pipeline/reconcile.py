@@ -1,12 +1,13 @@
+# src/subtitles_ocr/pipeline/reconcile.py
 import logging
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from difflib import SequenceMatcher
 from typing import Iterator
 
 from subtitles_ocr.models import SubtitleElement, SubtitleEvent
 from subtitles_ocr.vlm.client import OllamaClient
 from subtitles_ocr.vlm.prompt import RECONCILE_PROMPT
+from subtitles_ocr.pipeline.retry import RetryConfig, RetryExhausted, NonRetryable, with_retry
 
 log = logging.getLogger(__name__)
 
@@ -20,26 +21,11 @@ def _majority(values: list[str]) -> str:
     return values[0]
 
 
-def _mbr_text(texts: list[str]) -> str:
-    best = texts[0]
-    best_score = -1.0
-    for candidate in texts:
-        score = sum(SequenceMatcher(None, candidate, other).ratio() for other in texts) / len(texts)
-        if score > best_score:
-            best_score = score
-            best = candidate
-    return best
-
-
 def _reconcile_text(texts: list[str], client: OllamaClient) -> str:
     if len(set(texts)) == 1:
         return texts[0]
     numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(texts))
-    try:
-        return client.chat(f"Readings:\n{numbered}", system=RECONCILE_PROMPT).strip()
-    except RuntimeError:
-        log.warning("LLM reconciliation failed, falling back to MBR")
-        return _mbr_text(texts)
+    return client.chat(f"Readings:\n{numbered}", system=RECONCILE_PROMPT).strip()
 
 
 def _reconcile_cluster(cluster: list[SubtitleEvent], client: OllamaClient) -> SubtitleEvent:
@@ -71,7 +57,24 @@ def reconcile_groups(
     clusters: list[list[SubtitleEvent]],
     client: OllamaClient,
     workers: int,
-) -> Iterator[SubtitleEvent]:
+    retry_config: RetryConfig | None = None,
+) -> Iterator[SubtitleEvent | None]:
+    if retry_config is None:
+        retry_config = RetryConfig()
+
+    def process(cluster: list[SubtitleEvent]) -> SubtitleEvent | None:
+        try:
+            return with_retry(lambda: _reconcile_cluster(cluster, client), retry_config, log)
+        except NonRetryable as e:
+            log.warning(
+                "reconcile [cluster@%.3f] non-retryable: %s",
+                cluster[0].start_time, e.__cause__,
+            )
+            return None
+        except RetryExhausted:
+            log.warning("reconcile [cluster@%.3f] retries exhausted", cluster[0].start_time)
+            return None
+
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        for result in executor.map(lambda c: _reconcile_cluster(c, client), clusters):
+        for result in executor.map(process, clusters):
             yield result
