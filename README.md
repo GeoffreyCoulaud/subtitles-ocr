@@ -15,18 +15,19 @@ Original text positions should not be altered. This is a pure extraction program
 
 ## How it works
 
-The pipeline runs 8 sequential steps:
+The pipeline runs 9 sequential steps:
 
-| Step | Name         | Description                                                                                                                                       |
-|------|--------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1    | Extract      | ffmpeg extracts every frame at native FPS                                                                                                         |
-| 2    | pHash filter | Consecutive frames with an identical perceptual hash are collapsed into one group                                                                 |
-| 3    | Pre-filter   | `llava:7b` classifies each group as containing text or not — fast binary pass to skip blank frames                                                |
-| 4    | Analyze      | `qwen2.5vl:3b` extracts text, style, color, position, and alignment from each text-bearing group                                                  |
-| 5    | Group events | Consecutive identical analyses are merged into subtitle events                                                                                    |
-| 6    | Fuzzy group  | Similar events are clustered using trigram similarity; short gaps between similar events are bridged                                              |
-| 7    | Reconcile    | Each cluster is collapsed into one canonical event — `gemma3:1b-it-qat` reconciles noisy text readings; majority vote picks style/color/alignment |
-| 8    | Serialize    | The reconciled events are written to an ASS subtitle file                                                                                         |
+| Step | Name           | Description                                                                                                                                       |
+|------|----------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1    | Extract        | ffmpeg extracts every frame at native FPS                                                                                                         |
+| 2    | Frame filter   | Frames within any `--skip` range are dropped; remaining frames are written to `002-filtered_manifest.json`                                        |
+| 3    | pHash filter   | Consecutive frames with an identical perceptual hash are collapsed into one group                                                                 |
+| 4    | Pre-filter     | `llava:7b` classifies each group as containing text or not — fast binary pass to skip blank frames                                                |
+| 5    | Analyze        | `qwen2.5vl:3b` extracts text, style, color, position, and alignment from each text-bearing group                                                  |
+| 6    | Group events   | Consecutive identical analyses are merged into subtitle events                                                                                    |
+| 7    | Fuzzy group    | Similar events are clustered using trigram similarity; short gaps between similar events are bridged                                              |
+| 8    | Reconcile      | Each cluster is collapsed into one canonical event — `gemma3:1b-it-qat` reconciles noisy text readings; majority vote picks style/color/alignment |
+| 9    | Serialize      | The reconciled events are written to an ASS subtitle file                                                                                         |
 
 Each step writes its output to the work directory, named `NNN-<file>` where `NNN` is the step number (e.g. `003-filter.jsonl`). Delete a file to force that step to re-run on the next invocation.
 
@@ -77,6 +78,7 @@ This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr
 | `--edge-diff-threshold`  | `8.0`                    | Edge difference threshold for frame grouping                                               |
 | `--similarity-threshold` | `0.75`                   | Trigram similarity threshold for fuzzy event grouping                                      |
 | `--gap-tolerance`        | `0.5`                    | Max gap in seconds to bridge between similar events                                        |
+| `--skip`                 | —                        | Skip frames in this time range (`HH:MM:SS`, `MM:SS`, or `SS`). Can be repeated for multiple ranges. |
 | `--inference-url`        | `http://localhost:11434` | Base URL of the OpenAI-compatible inference server                                         |
 
 ### Example
