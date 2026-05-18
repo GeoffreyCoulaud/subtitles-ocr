@@ -1,7 +1,7 @@
 # ADR-0001: Diff-based Hardsub Extraction Pipeline
 
 Branch: `feat/subtitle-pixels-by-diff-with-raw`
-Status: Scoped, not yet implemented.
+Status: Scoped, not yet implemented. **Several sections revised by [ADR-0002](ADR-0002-Pipeline-Detailed-Design.md)** — see ADR-0002 §1 for the revision map. This document preserves the original scoping reasoning intact; ADR-0002 is the current source of truth for revised areas.
 Origin: Pick-my-brain scoping conversation between user and Claude.
 
 This ADR captures both the final design and the reasoning behind each fork, so the work can be resumed in another session without losing context.
