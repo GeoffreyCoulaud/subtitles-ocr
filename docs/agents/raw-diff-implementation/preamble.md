@@ -2,7 +2,7 @@
 
 À lire (par l'agent) avant toute action. Vaut pour tous les prompts P0–P6.
 
-Tu travailles sur le projet **subtitles-ocr** (extraction de sous-titres hardsubbed par diff avec une vidéo raw). Branche cible : `feat/subtitle-pixels-by-diff-with-raw`.
+Tu travailles sur le projet **subtitles-ocr** (extraction de sous-titres hardsubbed par diff avec une vidéo raw). Branche cible : `feat/raw-diff-implementation`.
 
 ## Lectures obligatoires avant de coder
 
