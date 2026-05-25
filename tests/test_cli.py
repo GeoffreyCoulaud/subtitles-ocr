@@ -56,13 +56,13 @@ def test_fixtures_smoke(tmp_workdir: Path, mock_globals: PipelineGlobals) -> Non
 
 
 def test_parse_args_returns_globals_and_config(tmp_path: Path) -> None:
-    globals_, config = parse_args(_base_args(tmp_path))
+    globals_, config, _debug = parse_args(_base_args(tmp_path))
     assert isinstance(globals_, PipelineGlobals)
     assert isinstance(config, PipelineConfig)
 
 
 def test_parse_args_paths_map_into_globals(tmp_path: Path) -> None:
-    globals_, _ = parse_args(_base_args(tmp_path))
+    globals_, _config, _debug = parse_args(_base_args(tmp_path))
     assert globals_.hardsub_path == tmp_path / "hardsub.avi"
     assert globals_.raw_path == tmp_path / "raw.mkv"
     assert globals_.out_path == tmp_path / "out.ass"
@@ -70,60 +70,70 @@ def test_parse_args_paths_map_into_globals(tmp_path: Path) -> None:
 
 
 def test_parse_args_debug_images_flag(tmp_path: Path) -> None:
-    globals_, _ = parse_args([*_base_args(tmp_path), "--debug-images"])
+    globals_, _config, _debug = parse_args([*_base_args(tmp_path), "--debug-images"])
     assert globals_.debug_images is True
 
 
 def test_parse_args_debug_images_default_false(tmp_path: Path) -> None:
-    globals_, _ = parse_args(_base_args(tmp_path))
+    globals_, _config, _debug = parse_args(_base_args(tmp_path))
     assert globals_.debug_images is False
 
 
+def test_parse_args_debug_flag_true(tmp_path: Path) -> None:
+    _globals, _config, debug = parse_args([*_base_args(tmp_path), "--debug"])
+    assert debug is True
+
+
+def test_parse_args_debug_flag_default_false(tmp_path: Path) -> None:
+    _globals, _config, debug = parse_args(_base_args(tmp_path))
+    assert debug is False
+
+
 def test_parse_args_fps_defaults_to_24(tmp_path: Path) -> None:
-    globals_, _ = parse_args(_base_args(tmp_path))
+    globals_, _config, _debug = parse_args(_base_args(tmp_path))
     assert globals_.fps == Fraction(24, 1)
 
 
 def test_parse_args_fps_num_den_override(tmp_path: Path) -> None:
-    globals_, _ = parse_args(
+    globals_, _config, _debug = parse_args(
         [*_base_args(tmp_path), "--fps-num", "24000", "--fps-den", "1001"]
     )
     assert globals_.fps == Fraction(24000, 1001)
 
 
 def test_parse_args_ar_strategy(tmp_path: Path) -> None:
-    _, config = parse_args([*_base_args(tmp_path), "--ar-strategy", "letterbox"])
+    _globals, config, _debug = parse_args([*_base_args(tmp_path), "--ar-strategy", "letterbox"])
     assert config.ar_strategy == "letterbox"
 
 
 def test_parse_args_ar_strategy_default(tmp_path: Path) -> None:
-    _, config = parse_args(_base_args(tmp_path))
+    _globals, config, _debug = parse_args(_base_args(tmp_path))
     assert config.ar_strategy == "error"
 
 
 def test_parse_args_synopsis(tmp_path: Path) -> None:
     syn = tmp_path / "syn.txt"
-    _, config = parse_args([*_base_args(tmp_path), "--synopsis", str(syn)])
+    _globals, config, _debug = parse_args([*_base_args(tmp_path), "--synopsis", str(syn)])
     assert config.synopsis_path == syn
 
 
 def test_parse_args_color_cluster_threshold(tmp_path: Path) -> None:
-    _, config = parse_args([*_base_args(tmp_path), "--color-cluster-threshold", "12.5"])
+    _globals, config, _debug = parse_args([*_base_args(tmp_path), "--color-cluster-threshold", "12.5"])
     assert config.color_cluster_threshold == 12.5
 
 
 def test_parse_args_hardsub_audio_track(tmp_path: Path) -> None:
-    _, config = parse_args([*_base_args(tmp_path), "--hardsub-audio-track", "1"])
+    _globals, config, _debug = parse_args([*_base_args(tmp_path), "--hardsub-audio-track", "1"])
     assert config.hardsub_audio_track == 1
 
 
 def test_parse_args_raw_audio_track(tmp_path: Path) -> None:
-    _, config = parse_args([*_base_args(tmp_path), "--raw-audio-track", "0"])
+    _globals, config, _debug = parse_args([*_base_args(tmp_path), "--raw-audio-track", "0"])
     assert config.raw_audio_track == 0
 
 
 def test_parse_args_hardsub_skip_repeatable(tmp_path: Path) -> None:
-    _, config = parse_args(
+    _globals, config, _debug = parse_args(
         [
             *_base_args(tmp_path),
             "--hardsub-skip",
@@ -136,12 +146,12 @@ def test_parse_args_hardsub_skip_repeatable(tmp_path: Path) -> None:
 
 
 def test_parse_args_hardsub_skip_empty_default(tmp_path: Path) -> None:
-    _, config = parse_args(_base_args(tmp_path))
+    _globals, config, _debug = parse_args(_base_args(tmp_path))
     assert config.hardsub_skip_ranges == []
 
 
 def test_parse_args_raw_skip_repeatable(tmp_path: Path) -> None:
-    _, config = parse_args(
+    _globals, config, _debug = parse_args(
         [
             *_base_args(tmp_path),
             "--raw-skip",
@@ -158,7 +168,7 @@ def test_parse_args_raw_skip_repeatable(tmp_path: Path) -> None:
 # at this phase. They are wired into their stage's sub-model in P4 (Stage 6, 10, 11).
 # For now we only verify parse_args accepts them without error.
 def test_parse_args_accepts_stage_flags_without_error(tmp_path: Path) -> None:
-    globals_, config = parse_args(
+    globals_, config, _debug = parse_args(
         [
             *_base_args(tmp_path),
             "--language", "japan",
@@ -177,7 +187,7 @@ def test_parse_args_argv_none_uses_sys_argv(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("sys.argv", ["prog", *_base_args(tmp_path)])
-    globals_, _ = parse_args(None)
+    globals_, _config, _debug = parse_args(None)
     assert globals_.hardsub_path == tmp_path / "hardsub.avi"
 
 
@@ -344,3 +354,28 @@ def test_main_creates_workdir_if_missing(
     assert rc == 0
     assert workdir.is_dir()
     assert (workdir / "pipeline.log").exists()
+
+
+def test_main_uses_debug_flag_for_stdout_level(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--debug must set stdout handler level to DEBUG; without it, INFO."""
+    monkeypatch.setattr("subtitles_ocr.cli.build_stages", lambda: [HappyStage()])
+
+    # Without --debug: stdout handler should be INFO
+    main(_base_args(tmp_path))
+    root = logging.getLogger("subtitles_ocr")
+    stdout_handler = next(
+        h for h in root.handlers if isinstance(h, logging.StreamHandler)
+        and not isinstance(h, logging.FileHandler)
+    )
+    assert stdout_handler.level == logging.INFO
+
+    # With --debug: stdout handler should be DEBUG
+    main([*_base_args(tmp_path), "--debug"])
+    root = logging.getLogger("subtitles_ocr")
+    stdout_handler = next(
+        h for h in root.handlers if isinstance(h, logging.StreamHandler)
+        and not isinstance(h, logging.FileHandler)
+    )
+    assert stdout_handler.level == logging.DEBUG

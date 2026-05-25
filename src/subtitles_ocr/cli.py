@@ -60,7 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def parse_args(argv: list[str] | None = None) -> tuple[PipelineGlobals, PipelineConfig]:
+def parse_args(argv: list[str] | None = None) -> tuple[PipelineGlobals, PipelineConfig, bool]:
     ns = _build_parser().parse_args(argv)
 
     globals_ = PipelineGlobals(
@@ -85,7 +85,7 @@ def parse_args(argv: list[str] | None = None) -> tuple[PipelineGlobals, Pipeline
         raw_skip_ranges=list(ns.raw_skip or []),
     )
 
-    return globals_, config
+    return globals_, config, ns.debug
 
 
 # ---------------------------------------------------------------------------
@@ -157,9 +157,9 @@ def run_pipeline(
 
 
 def main(argv: list[str] | None = None) -> int:
-    globals_, config = parse_args(argv)
+    globals_, config, debug = parse_args(argv)
     globals_.workdir.mkdir(parents=True, exist_ok=True)
-    stdout_level = logging.DEBUG if globals_.debug_images else logging.INFO
+    stdout_level = logging.DEBUG if debug else logging.INFO
     setup_logging(stdout_level, globals_.workdir / "pipeline.log")
     try:
         run_pipeline(globals_, config)
