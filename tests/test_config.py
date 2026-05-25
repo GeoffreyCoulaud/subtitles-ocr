@@ -45,6 +45,13 @@ def test_pipeline_globals_instantiable(tmp_path: Path) -> None:
     assert g.fps == Fraction(24000, 1001)
 
 
+def test_pipeline_globals_fps_accepts_int(tmp_path: Path) -> None:
+    g = _make_globals(tmp_path, fps=24)  # type: ignore[arg-type]
+
+    assert g.fps == Fraction(24, 1)
+    assert isinstance(g.fps, Fraction)
+
+
 def test_pipeline_globals_json_round_trip_preserves_fraction(tmp_path: Path) -> None:
     g = _make_globals(tmp_path, fps=Fraction(24000, 1001))
 
