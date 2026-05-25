@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-subtitles-ocr = "subtitles_ocr.cli:cli"
+subtitles-ocr = "subtitles_ocr.cli:main"
 
 [project.optional-dependencies]
 dev = [
