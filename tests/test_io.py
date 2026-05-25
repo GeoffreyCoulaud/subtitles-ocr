@@ -77,6 +77,26 @@ def test_mid_file_corruption_raises(tmp_path: Path) -> None:
         reader.resume_index()
 
 
+def test_append_without_context_manager_raises(tmp_path: Path) -> None:
+    path = tmp_path / "items.jsonl"
+    writer = JsonlWriter(path, FakeItem)
+    with pytest.raises(RuntimeError):
+        writer.append(FakeItem(n=0))
+
+
+def test_resume_index_empty_file(tmp_path: Path) -> None:
+    # Non-existent path → 0
+    path = tmp_path / "nonexistent.jsonl"
+    writer = JsonlWriter(path, FakeItem)
+    assert writer.resume_index() == 0
+
+    # Empty file → 0
+    empty_path = tmp_path / "empty.jsonl"
+    empty_path.write_bytes(b"")
+    writer2 = JsonlWriter(empty_path, FakeItem)
+    assert writer2.resume_index() == 0
+
+
 def test_fsync_every_cadence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "items.jsonl"
     calls: list[int] = []

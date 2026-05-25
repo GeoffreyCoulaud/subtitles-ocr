@@ -1,4 +1,3 @@
-import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -41,7 +40,7 @@ class JsonlWriter[T: BaseModel]:
         for i, line in enumerate(candidate_lines):
             try:
                 self._model_cls.model_validate_json(line)
-            except (ValueError, json.JSONDecodeError) as exc:
+            except ValueError as exc:
                 if tolerate_last_invalid and i == last_index:
                     break
                 raise CacheCorruptionError(
