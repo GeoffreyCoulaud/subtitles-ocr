@@ -631,6 +631,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "httpx" },
     { name = "numpy" },
     { name = "openai" },
     { name = "pillow" },
@@ -654,6 +655,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "openai", specifier = ">=2.33.0" },
     { name = "pillow", specifier = ">=11.0" },
