@@ -1,6 +1,20 @@
+"""Pipeline configuration root + per-stage sub-configs.
+
+Design note (import cycle avoidance):
+    Per ADR-0004 §12 each stage exposes its Result schema in its own module.
+    The corresponding per-stage `XConfig` model could in principle live alongside
+    the stage code, but `config.py` is imported by `cli.py` and the stage modules
+    themselves import `PipelineGlobals` from here for type hints. Defining the
+    sub-configs in stage modules would force `config.py` to import them back to
+    assemble `PipelineConfig`, creating a cycle. We therefore keep every
+    sub-config in `config.py` and let stage modules import their config class
+    from here. The schemas (Result, sub-types) still live in the stage modules,
+    per ADR-0004 §12.
+"""
+
 from fractions import Fraction
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
@@ -54,43 +68,95 @@ class PipelineGlobals(BaseModel):
 
 
 class ConformConfig(BaseModel):
+    # Stage 1 reads root-level flags (ar_strategy, audio tracks). No stage-local
+    # tunables today; reserved for future ffmpeg knobs (e.g., codec choice).
     pass
 
 
 class AlignmentConfig(BaseModel):
-    pass
+    # Sub-stage 2a — audio coarse alignment (baselines, à tuner)
+    audio_thresh_low: float = 0.20  # baseline, à tuner
+    audio_thresh_high: float = 0.50  # baseline, à tuner
+    audio_thresh_snr: float = 3.0  # baseline, à tuner
+    min_match_s: float = 1.0  # baseline, à tuner
+    offset_tolerance_frames: int = 2  # baseline, à tuner
+    # Sub-stage 2b — phash refinement (defaults from ADR-0002 §9)
+    thresh_agree: int = 10
+    threshold_disagree: float = 0.30
+    # Sub-stage 2c — phash fallback (per ADR-0001 §17)
+    w_initial: int = 4  # baseline, à tuner
+    w_min: int = 2  # baseline, à tuner
+    w_max: int = 16  # baseline, à tuner
+    grow_step: int = 2  # baseline, à tuner
+    shrink_step: int = 1  # baseline, à tuner
+    thresh_match: int = 12  # baseline, à tuner
+    # Failure policy (ADR-0002 §3 Stage 2)
+    orphan_ratio_max: float = 0.30
 
 
 class FrameProcessingConfig(BaseModel):
-    pass
+    # Stage 3 — diff (ADR-0002 §9, baselines à tuner)
+    lcn_sigma: float = 1.5  # baseline, à tuner
+    std_floor: float = 1e-3  # baseline, à tuner
+    # Stage 4 — mask formation
+    mask_smoothing_sigma: float = 1.0  # baseline, à tuner
+    mask_t_high: float = 0.30  # baseline, à tuner
+    mask_t_low: float = 0.10  # baseline, à tuner
+    mask_area_min: int = 20  # baseline, à tuner
+    mask_area_max: int = 500_000  # baseline, à tuner
+    mask_dilation_iter: int = 1
 
 
 class OcrConfig(BaseModel):
-    pass
+    language: str = "latin"
+    device: Annotated[Literal["auto", "cuda", "rocm", "cpu"], NoCacheKey] = "auto"
+    parallelism: Annotated[int, NoCacheKey] = 1
+    chunk_size: int = 500
 
 
 class GroupConfig(BaseModel):
-    pass
+    text_levenshtein_max: float = 0.2
+    quad_iou_min: float = 0.5
 
 
 class AnimationConfig(BaseModel):
-    pass
+    # All defaults are baselines from ADR-0003 §8 (placeholder, to tune).
+    min_move_displacement_px: int = 8
+    move_gap_tolerance_ms: int = 200
+    move_r2_threshold: float = 0.95
+    move_text_levenshtein_max: float = 0.2
+    fade_search_window_ms: int = 1250
+    min_fade_duration_ms: int = 125
+    fade_duration_cap_ms: int = 1000
+    fade_score_fit_range: tuple[float, float] = (0.05, 0.95)
+    fade_fit_r2_threshold: float = 0.7
 
 
 class ColorConfig(BaseModel):
-    pass
+    interior_hue_var_max: float = 0.05  # baseline, à tuner
+    outline_hue_var_max: float = 0.05  # baseline, à tuner
+    interior_min_pixels: int = 100
+    pool_ratio_min: float = 0.1
+    pool_ratio_max: float = 10.0
+    crop_padding_pct: float = 0.10
+    erosion_factor: float = 0.4
+    hsv_bins: int = 16
 
 
 class EventCleanupConfig(BaseModel):
-    pass
+    model: str | None = None
+    parallelism: Annotated[int, NoCacheKey] = 4
+    chunk_size: int = 100
 
 
 class DocCleanupConfig(BaseModel):
-    pass
+    model: str | None = None
+    parallelism: Annotated[int, NoCacheKey] = 1
 
 
 class ExportConfig(BaseModel):
-    pass
+    default_font: str = "Arial"
+    default_font_size: int = 60
 
 
 class PipelineConfig(BaseModel):
