@@ -152,6 +152,7 @@ class EventCleanupConfig(BaseModel):
 class DocCleanupConfig(BaseModel):
     model: str | None = None
     parallelism: Annotated[int, NoCacheKey] = 1
+    synopsis_path: Path | None = None
 
 
 class ExportConfig(BaseModel):
