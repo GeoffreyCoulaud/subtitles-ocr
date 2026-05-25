@@ -51,14 +51,14 @@ def test_conform_result_round_trip() -> None:
     assert restored.pix_fmt == "yuv420p"
 
 
-def test_conform_stage_run_raises_not_implemented(mock_globals) -> None:
+# Note: ConformStage.run() is no longer NotImplementedError once P3.1 implements
+# Stage 1. Behavioural coverage moved to tests/pipeline/test_conform.py.
+def test_conform_stage_class_metadata() -> None:
     from subtitles_ocr.pipeline.conform import ConformStage
 
     stage = ConformStage()
     assert stage.CONFIG_FIELD == "conform"
     assert isinstance(stage.GLOBALS_USED, tuple)
-    with pytest.raises(NotImplementedError):
-        stage.run(mock_globals, ConformConfig())
 
 
 # -------------------- alignment --------------------

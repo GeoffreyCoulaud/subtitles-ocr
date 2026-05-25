@@ -68,9 +68,12 @@ class PipelineGlobals(BaseModel):
 
 
 class ConformConfig(BaseModel):
-    # Stage 1 reads root-level flags (ar_strategy, audio tracks). No stage-local
-    # tunables today; reserved for future ffmpeg knobs (e.g., codec choice).
-    pass
+    # ADR-0002 §3 Stage 1. ar_strategy governs the AR-mismatch policy between
+    # fansub and raw; "error" (default) is the conservative choice to surface
+    # mismatched pairs explicitly before they corrupt downstream alignment.
+    ar_strategy: Literal["error", "letterbox", "crop"] = "error"
+    output_codec: str = "ffv1"
+    output_container: str = "mkv"
 
 
 class AlignmentConfig(BaseModel):
