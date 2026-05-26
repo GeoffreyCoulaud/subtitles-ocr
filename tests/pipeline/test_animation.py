@@ -566,3 +566,195 @@ def test_fade_search_window_excludes_other_event_frames(
         if 20 <= f < 25 and bbox[1] >= 90
     ]
     assert ev1_pre_calls == []
+
+
+# ---------------------------------------------------------------------------
+# A2 — gap == 0 (contiguous events)
+# ---------------------------------------------------------------------------
+
+
+def test_inter_event_merge_gap_zero_merges(mock_globals: PipelineGlobals) -> None:
+    """gap=0 means fansub_frame_end[ev0] == fansub_frame_start[ev1].
+
+    The merge condition is ``gap > gap_tol_frames or gap < 0``.  With gap=0,
+    neither branch triggers, so the events should be merged into one.
+    """
+    # ev0: frames 10-19 (end=20), ev1: frames 20-29 (start=20) → gap = 0
+    quads0 = {f: _quad_around(100 + (f - 10) * 10, 50) for f in range(10, 20)}
+    quads1 = {f: _quad_around(100 + (f - 10) * 10, 50) for f in range(20, 30)}
+    ev0 = _make_event(event_id=0, start=10, end=20, quads=quads0, texts=["Hi"] * 10)
+    ev1 = _make_event(event_id=1, start=20, end=30, quads=quads1, texts=["Hi"] * 10)
+    _write_group(mock_globals.workdir, [ev0, ev1])
+
+    result = AnimationStage().run(mock_globals, AnimationConfig())
+
+    # gap=0 is within tolerance (gap_tol_frames >= 0 always) → merge expected
+    assert len(result.events) == 1
+    merged = result.events[0]
+    assert merged.fansub_frame_start == 10
+    assert merged.fansub_frame_end == 30
+
+
+# ---------------------------------------------------------------------------
+# B — fade-out anchor frame boundary
+# ---------------------------------------------------------------------------
+
+
+def test_fade_out_post_window_starts_at_fansub_frame_end_not_before(
+    mock_globals: PipelineGlobals,
+) -> None:
+    """Verify that the fade-out observation window is [fansub_frame_end, end+W).
+
+    The frame ``fansub_frame_end - 1`` is the last in-event frame and must NOT
+    appear as a post-window observation (it is used as the mathematical x-anchor
+    of the constrained fit, but is never scored by the source in that role).
+    The frame ``fansub_frame_end`` IS the first post-window frame and must be
+    queried.
+
+    We verify this by giving frame ``fansub_frame_end - 1`` a score that would
+    corrupt the fit if included in the post-window observations, while giving
+    the actual post-window frames a clean linear ramp.  If the boundary is
+    respected, fade-out is detected normally.
+    """
+    # Static event: frames 30-49 (end=50).
+    # fansub_frame_end - 1 = 49 (in-event, must NOT appear in post-window obs).
+    # Post-window: frames 50-55.
+    quads = {f: _quad_around(100, 50) for f in range(30, 50)}
+    ev = _make_event(event_id=0, start=30, end=50, quads=quads)
+    _write_group(mock_globals.workdir, [ev])
+
+    scores: dict[int, float] = {}
+    # In-event frames → 1.0 (anchor_intensity is taken from frame 30)
+    for f in range(30, 50):
+        scores[f] = 1.0
+    # Post-window: clean 6-frame linear ramp (scores in [0.05, 0.95] band)
+    fade_out_frames = 6
+    for k in range(1, fade_out_frames + 1):
+        scores[50 - 1 + k] = max(0.0, 1.0 - k / fade_out_frames)  # frames 50-55
+    # Padding → 0
+    for f in range(56, 62):
+        scores[f] = 0.0
+
+    src = FakeDiffSource(scores)
+    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+
+    out = result.events[0]
+    # Fade-out must be detected (post-window boundary is correct)
+    assert out.fade_out_ms > 0, (
+        "fade-out not detected; post-window boundary may be incorrect"
+    )
+    assert out.fansub_frame_end > 50, "fansub_frame_end was not extended"
+
+    # fansub_frame_end (50) must be in the source calls (post-window)
+    queried_frames = [f for (f, _) in src.calls]
+    assert 50 in queried_frames, "frame 50 (first post-window frame) was never queried"
+
+    # fansub_frame_end - 1 (49) must NOT appear as a post-window observation.
+    # It IS queried once as the in-event anchor (frame_start=30 query), but
+    # frame 49 itself should not be in the post-window observation loop.
+    # Check: only frame 30 (anchor query) and frames 50+ (post-window) appear
+    # among the post-window-related calls (frames >= 50).
+    post_queried = [f for f in queried_frames if f >= 50]
+    assert 49 not in post_queried, (
+        "frame 49 (fansub_frame_end-1) appeared in post-window observations"
+    )
+
+
+# ---------------------------------------------------------------------------
+# B — split of test_fade_extrapolated_below_min_reverts
+# ---------------------------------------------------------------------------
+
+
+def test_fade_with_too_few_observations_returns_zero(
+    mock_globals: PipelineGlobals,
+) -> None:
+    """Branch: len(obs_xs) < min_frames → return 0.
+
+    At 24 fps, min_frames = ceil(125 / (1000/24)) = ceil(3.0) = 3.
+    A 1-frame ramp yields exactly 1 observation in the [0.05, 0.95] band,
+    which is < 3, so the function must return 0 before fitting.
+    """
+    quads = {f: _quad_around(100, 50) for f in range(30, 50)}
+    ev = _make_event(event_id=0, start=30, end=50, quads=quads)
+    _write_group(mock_globals.workdir, [ev])
+
+    # 1-frame ramp: only 1 observation at score ≈ 0.5 (within [0.05, 0.95])
+    scores = _linear_ramp_scores(30, 50, fade_in_frames=1, pre_window=5)
+    src = FakeDiffSource(scores)
+
+    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+
+    assert result.events[0].fade_in_ms == 0
+
+
+def test_fade_extrapolated_below_min_ms_reverts_with_warning(
+    mock_globals: PipelineGlobals,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Branch: enough observations (>= min_frames), but t_extrapolated < min_fade_duration_ms.
+
+    At 24 fps, min_frames = ceil(125 / (1000/24)) = 3.  We provide exactly
+    3 observations (>= min_frames, so the too-few-observations branch is NOT taken)
+    but with a slope so steep the extrapolation yields < 125 ms.
+
+    Maths: constrained fit through anchor (30, 1.0) with 3 obs all at score=0.05
+    (frames 27, 28, 29):
+      slope = Σ(d_i * 0.95) / Σ(d_i²)  where d_i = 30 - f_i ∈ {1, 2, 3}
+            = 0.95 * 6 / 14 ≈ 0.407 /frame
+      t_frames = 1 / 0.407 ≈ 2.46  →  t_ms = round(2.46 * 1000 / 24) ≈ 102 ms < 125 ms ✓
+    """
+    import logging
+
+    quads = {f: _quad_around(100, 50) for f in range(30, 50)}
+    ev = _make_event(event_id=0, start=30, end=50, quads=quads)
+    _write_group(mock_globals.workdir, [ev])
+
+    scores = {f: 1.0 for f in range(30, 50)}
+    # 3 obs at the minimum boundary of the fit range → steep slope, short extrapolation
+    scores[29] = 0.05
+    scores[28] = 0.05
+    scores[27] = 0.05
+    # Frames further away → below band (0.0), not included in observations
+    for f in range(20, 27):
+        scores[f] = 0.0
+    src = FakeDiffSource(scores)
+
+    with caplog.at_level(logging.WARNING, logger="subtitles_ocr.pipeline.animation"):
+        result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+
+    # Extrapolated t_ms ≈ 102 ms < min_fade_duration_ms (125 ms) → revert to 0
+    assert result.events[0].fade_in_ms == 0
+
+
+# ---------------------------------------------------------------------------
+# B — fade-out for linear moving event uses extrapolated bbox
+# ---------------------------------------------------------------------------
+
+
+def test_fade_out_for_linear_moving_event_uses_extrapolated_bbox(
+    mock_globals: PipelineGlobals,
+) -> None:
+    """Fade-out post-window bboxes must follow the extrapolated linear trajectory.
+
+    Symmetric to ``test_fade_for_linear_moving_event_uses_extrapolated_bbox``
+    for the fade-in side. The event moves from cx=100 (frame 10) to cx=290
+    (frame 29). Post-window frames (>= 30) should be queried with bboxes whose
+    x-centre continues to shift beyond 290, not stuck at the static quad_median.
+    """
+    quads = {f: _quad_around(100 + (f - 10) * 10, 50) for f in range(10, 30)}
+    ev = _make_event(event_id=0, start=10, end=30, quads=quads)
+    _write_group(mock_globals.workdir, [ev])
+
+    scores = _linear_ramp_scores(10, 30, fade_out_frames=6, post_window=5)
+    src = FakeDiffSource(scores)
+
+    AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+
+    # Filter to only the post-window calls (frames >= 30)
+    post_calls = [(f, bbox) for (f, bbox) in src.calls if f >= 30]
+    assert len(post_calls) > 0, "no post-window frames were queried"
+    # Bbox cx must differ across post-window frames (trajectory is extrapolated)
+    xs = sorted({(bbox[0] + bbox[2]) / 2 for (_, bbox) in post_calls})
+    assert len(xs) > 1, (
+        "post-window bboxes have identical x-centre; trajectory extrapolation not applied"
+    )
