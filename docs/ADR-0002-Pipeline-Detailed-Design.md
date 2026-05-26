@@ -275,6 +275,8 @@ Two roles in one call: reconcile the N OCR variants per event into a single cano
 
 ### Stage 10 — Whole-document LLM cleanup
 
+> **Note:** This section is superseded by [ADR-0005](ADR-0005-Normalize-Stage-Refactor.md). The narrative-coherence goal is abandoned; the stage is repurposed as deterministic text normalization (LLM-free). What follows is the historical design.
+
 - Single LLM call over **all** events of the episode (no chunking with overlap, no rolling window).
 - Prompt structure:
   - System: instructions for narrative coherence (consistent character names, ponctuation, optional synopsis application).
