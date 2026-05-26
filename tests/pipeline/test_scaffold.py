@@ -118,13 +118,14 @@ def test_alignment_result_round_trip() -> None:
     assert len(restored.segments) == 1
 
 
-def test_alignment_stage_run_raises_not_implemented(mock_globals) -> None:
+def test_alignment_stage_attributes() -> None:
     from subtitles_ocr.pipeline.alignment import AlignmentStage
 
+    # AlignmentStage is implemented (see tests/pipeline/test_alignment.py).
+    # Scaffold check kept for CONFIG_FIELD / GLOBALS_USED contract only.
     stage = AlignmentStage()
     assert stage.CONFIG_FIELD == "alignment"
-    with pytest.raises(NotImplementedError):
-        stage.run(mock_globals, AlignmentConfig())
+    assert isinstance(stage.GLOBALS_USED, tuple)
 
 
 # -------------------- frame_processing --------------------
