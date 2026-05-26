@@ -428,13 +428,12 @@ def test_event_cleanup_result_round_trip() -> None:
     assert len(restored.items) == 1
 
 
-def test_event_cleanup_stage_run_raises_not_implemented(mock_globals) -> None:
+def test_event_cleanup_stage_exposes_config_field() -> None:
+    # Stage is now implemented (see tests/pipeline/test_event_cleanup.py);
+    # only the static class-level CONFIG_FIELD is checked here.
     from subtitles_ocr.pipeline.event_cleanup import EventCleanupStage
 
-    stage = EventCleanupStage(llm=object())
-    assert stage.CONFIG_FIELD == "event_cleanup"
-    with pytest.raises(NotImplementedError):
-        stage.run(mock_globals, EventCleanupConfig())
+    assert EventCleanupStage.CONFIG_FIELD == "event_cleanup"
 
 
 # -------------------- doc_cleanup --------------------
