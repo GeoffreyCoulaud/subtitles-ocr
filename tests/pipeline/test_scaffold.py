@@ -480,13 +480,13 @@ def test_export_module_imports() -> None:
     assert export.STAGE_VERSION == 1
 
 
-def test_export_stage_run_raises_not_implemented(mock_globals) -> None:
+# `test_export_stage_run_raises_not_implemented` removed: ExportStage is now
+# implemented (P3.8). Behavioral coverage lives in tests/pipeline/test_export.py.
+def test_export_stage_metadata() -> None:
     from subtitles_ocr.pipeline.export import ExportStage
 
     stage = ExportStage()
     assert stage.CONFIG_FIELD == "export"
-    with pytest.raises(NotImplementedError):
-        stage.run(mock_globals, ExportConfig())
 
 
 # -------------------- PipelineConfig sub-config representative defaults --------------------
