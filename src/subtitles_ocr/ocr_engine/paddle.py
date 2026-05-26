@@ -112,21 +112,27 @@ class PaddleOcrEngine:
     def detect(self, image: np.ndarray) -> list["OcrDetection"]:
         from subtitles_ocr.pipeline.ocr import OcrDetection
 
-        # paddleocr 3.x / paddleocr 2.10 (which adopted the v3 API): predict()
-        # returns a list with one result per input; each result exposes a `json`
-        # attribute or property with `rec_texts`, `rec_scores`, `rec_polys`.
-        results = self._engine.predict(image)  # type: ignore[attr-defined]
+        # paddleocr 2.10 exposes `.ocr(image, ...)` and returns
+        # `[[[bbox_poly, (text, score)], ...]]` (outer list = one entry per
+        # input image). cls=False skips text-orientation classification, which
+        # we don't need for subtitle frames.
+        results = self._engine.ocr(image, cls=False)  # type: ignore[attr-defined]
         out: list[OcrDetection] = []
-        for res in results:
-            payload = res.json if not callable(res.json) else res.json()  # noqa: SIM108
-            texts: list[str] = payload.get("rec_texts", []) or []
-            scores: list[float] = payload.get("rec_scores", []) or []
-            polys = payload.get("rec_polys", []) or []
-            for text, score, poly in zip(texts, scores, polys, strict=False):
+        if not results:
+            return out
+        for image_result in results:
+            if not image_result:
+                continue
+            for entry in image_result:
+                if len(entry) != 2:
+                    continue
+                poly, text_and_score = entry
+                if not isinstance(text_and_score, (list, tuple)) or len(text_and_score) < 2:
+                    continue
+                text = str(text_and_score[0])
+                score = float(text_and_score[1])
                 pts = [(int(round(float(x))), int(round(float(y)))) for x, y in poly]
                 if len(pts) != 4:
                     continue
-                out.append(
-                    OcrDetection(text=text, confidence=float(score), quad=pts)
-                )
+                out.append(OcrDetection(text=text, confidence=score, quad=pts))
         return out

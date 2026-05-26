@@ -231,6 +231,57 @@ def test_paddle_ocr_engine_auto_falls_back_to_cpu_with_warning(caplog) -> None:
     assert any("fall" in msg and "cpu" in msg for msg in warning_texts)
 
 
+class _FakePaddleEngineV2:
+    """Mimics paddleocr 2.10's PaddleOCR instance: exposes .ocr(image, ...)."""
+
+    def __init__(self, payload):
+        self._payload = payload
+        self.calls = []
+
+    def ocr(self, image, **kwargs):
+        self.calls.append(kwargs)
+        return self._payload
+
+
+def test_paddle_ocr_engine_detect_parses_paddleocr_v2_format() -> None:
+    """`PaddleOCR.ocr(image)` (paddleocr 2.x API) returns
+    `[[[bbox, (text, score)], ...]]`. detect() must parse that into
+    OcrDetection items with text/confidence/quad."""
+    from subtitles_ocr.ocr_engine.paddle import PaddleOcrEngine
+
+    payload = [
+        [
+            [[[10, 20], [110, 20], [110, 60], [10, 60]], ("hello", 0.95)],
+            [[[12, 80], [120, 80], [120, 120], [12, 120]], ("world", 0.88)],
+        ]
+    ]
+    fake_engine = _FakePaddleEngineV2(payload)
+    engine = PaddleOcrEngine(
+        lang="latin", device="cpu", _engine_factory=lambda **_: fake_engine
+    )
+    img = np.zeros((128, 128, 3), dtype=np.uint8)
+    dets = engine.detect(img)
+
+    assert len(dets) == 2
+    assert dets[0].text == "hello"
+    assert dets[0].confidence == pytest.approx(0.95)
+    assert dets[0].quad == [(10, 20), (110, 20), (110, 60), (10, 60)]
+    assert dets[1].text == "world"
+    assert dets[1].quad == [(12, 80), (120, 80), (120, 120), (12, 120)]
+
+
+def test_paddle_ocr_engine_detect_handles_empty_result() -> None:
+    """No detections on an image must return an empty list (not crash)."""
+    from subtitles_ocr.ocr_engine.paddle import PaddleOcrEngine
+
+    fake_engine = _FakePaddleEngineV2([[]])
+    engine = PaddleOcrEngine(
+        lang="latin", device="cpu", _engine_factory=lambda **_: fake_engine
+    )
+    img = np.zeros((128, 128, 3), dtype=np.uint8)
+    assert engine.detect(img) == []
+
+
 def test_paddle_ocr_engine_cpu_baseline_initializes() -> None:
     from subtitles_ocr.ocr_engine.paddle import PaddleOcrEngine
 
