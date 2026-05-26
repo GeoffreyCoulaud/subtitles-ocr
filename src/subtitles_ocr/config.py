@@ -26,6 +26,7 @@ __all__ = [
     "ColorConfig",
     "ConformConfig",
     "DocCleanupConfig",
+    "NormalizeConfig",
     "EventCleanupConfig",
     "ExportConfig",
     "FrameProcessingConfig",
@@ -176,6 +177,12 @@ class DocCleanupConfig(BaseModel):
     synopsis_path: Path | None = None
 
 
+class NormalizeConfig(BaseModel):
+    """Normalize stage config (ADR-0005). No user-facing parameters."""
+
+    pass
+
+
 class ExportConfig(BaseModel):
     default_font: str = "Arial"
     default_font_size: int = 60
@@ -197,6 +204,7 @@ class PipelineConfig(BaseModel):
     color: ColorConfig = Field(default_factory=ColorConfig)
     event_cleanup: EventCleanupConfig = Field(default_factory=EventCleanupConfig)
     doc_cleanup: DocCleanupConfig = Field(default_factory=DocCleanupConfig)
+    normalize: NormalizeConfig = Field(default_factory=NormalizeConfig)
     export: ExportConfig = Field(default_factory=ExportConfig)
 
 
