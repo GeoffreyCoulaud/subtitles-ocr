@@ -150,7 +150,8 @@ def test_composed_frame_is_frozen_dataclass() -> None:
         cf.fansub_frame_idx = 0  # type: ignore[misc]
 
 
-def test_iter_composed_frames_raises_not_implemented(mock_globals) -> None:
+def test_iter_composed_frames_is_callable_and_yields_zero_for_empty_alignment(mock_globals) -> None:
+    # Implementation lives in P3.3; behavioral tests are in test_frame_processing.py.
     from subtitles_ocr.pipeline.alignment.stage import AlignmentResult
     from subtitles_ocr.pipeline.frame_processing import iter_composed_frames
 
@@ -164,9 +165,7 @@ def test_iter_composed_frames_raises_not_implemented(mock_globals) -> None:
         segments=[],
         warnings=[],
     )
-    with pytest.raises(NotImplementedError):
-        # Iterator must be consumed to trigger the body
-        list(iter_composed_frames(mock_globals, alignment, FrameProcessingConfig()))
+    assert list(iter_composed_frames(mock_globals, alignment, FrameProcessingConfig())) == []
 
 
 # -------------------- ocr --------------------
@@ -202,13 +201,12 @@ def test_frame_ocr_result_round_trip() -> None:
     assert restored.detections[0].text == "a"
 
 
-def test_ocr_stage_run_raises_not_implemented(mock_globals) -> None:
+def test_ocr_stage_class_constructs_without_real_engine() -> None:
+    # Implementation lives in P3.3; behavioral tests are in test_ocr.py.
     from subtitles_ocr.pipeline.ocr import OcrStage
 
     stage = OcrStage(ocr_engine=object())  # avoid instantiating real paddle engine
     assert stage.CONFIG_FIELD == "ocr"
-    with pytest.raises(NotImplementedError):
-        stage.run(mock_globals, OcrConfig())
 
 
 # -------------------- group --------------------
