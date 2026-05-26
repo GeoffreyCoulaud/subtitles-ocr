@@ -119,9 +119,9 @@ class FakeOcrEngine:
 class FakeLlm:
     """LlmClient that returns a constructed BaseModel of the requested schema.
 
-    Tracks call count; responses are produced by a callable so we can return
-    either CleanedEvent or DocCleanupResult depending on what the stage asked
-    for, without needing two separate fakes.
+    Tracks call count; responses are produced by a callable so the same fake
+    can serve any LLM consumer (currently only EventCleanupStage, after the
+    normalize refactor of ADR-0005 removed the doc-cleanup LLM call).
     """
 
     response_factory: object = None  # callable(schema, prompt) -> BaseModel

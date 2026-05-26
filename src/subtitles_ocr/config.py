@@ -25,7 +25,6 @@ __all__ = [
     "AnimationConfig",
     "ColorConfig",
     "ConformConfig",
-    "DocCleanupConfig",
     "NormalizeConfig",
     "EventCleanupConfig",
     "ExportConfig",
@@ -171,12 +170,6 @@ class EventCleanupConfig(BaseModel):
     chunk_size: int = 100
 
 
-class DocCleanupConfig(BaseModel):
-    model: str | None = None
-    parallelism: Annotated[int, NoCacheKey] = 1
-    synopsis_path: Path | None = None
-
-
 class NormalizeConfig(BaseModel):
     """Normalize stage config (ADR-0005). No user-facing parameters."""
 
@@ -203,7 +196,6 @@ class PipelineConfig(BaseModel):
     animation: AnimationConfig = Field(default_factory=AnimationConfig)
     color: ColorConfig = Field(default_factory=ColorConfig)
     event_cleanup: EventCleanupConfig = Field(default_factory=EventCleanupConfig)
-    doc_cleanup: DocCleanupConfig = Field(default_factory=DocCleanupConfig)
     normalize: NormalizeConfig = Field(default_factory=NormalizeConfig)
     export: ExportConfig = Field(default_factory=ExportConfig)
 

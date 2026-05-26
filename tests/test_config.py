@@ -8,12 +8,12 @@ from subtitles_ocr.config import (
     AnimationConfig,
     ColorConfig,
     ConformConfig,
-    DocCleanupConfig,
     EventCleanupConfig,
     ExportConfig,
     FrameProcessingConfig,
     GroupConfig,
     NoCacheKey,
+    NormalizeConfig,
     OcrConfig,
     PipelineConfig,
     PipelineGlobals,
@@ -83,7 +83,6 @@ def test_pipeline_config_instantiable_with_defaults() -> None:
     assert cfg.alignment.hardsub_skip_ranges == []
     assert cfg.alignment.raw_skip_ranges == []
     assert cfg.export.color_cluster_threshold == 10.0
-    assert cfg.doc_cleanup.synopsis_path is None
     assert isinstance(cfg.conform, ConformConfig)
     assert isinstance(cfg.alignment, AlignmentConfig)
     # FrameProcessingConfig is now owned by OcrConfig (issue 1 cleanup).
@@ -93,7 +92,7 @@ def test_pipeline_config_instantiable_with_defaults() -> None:
     assert isinstance(cfg.animation, AnimationConfig)
     assert isinstance(cfg.color, ColorConfig)
     assert isinstance(cfg.event_cleanup, EventCleanupConfig)
-    assert isinstance(cfg.doc_cleanup, DocCleanupConfig)
+    assert isinstance(cfg.normalize, NormalizeConfig)
     assert isinstance(cfg.export, ExportConfig)
 
 
@@ -163,7 +162,7 @@ def test_subconfigs_are_pydantic_basemodels() -> None:
         AnimationConfig,
         ColorConfig,
         EventCleanupConfig,
-        DocCleanupConfig,
+        NormalizeConfig,
         ExportConfig,
     ):
         assert issubclass(cls, BaseModel)

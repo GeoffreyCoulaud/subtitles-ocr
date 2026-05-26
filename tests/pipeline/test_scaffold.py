@@ -17,11 +17,11 @@ from subtitles_ocr.config import (
     AnimationConfig,
     ColorConfig,
     ConformConfig,
-    DocCleanupConfig,
     EventCleanupConfig,
     ExportConfig,
     FrameProcessingConfig,
     GroupConfig,
+    NormalizeConfig,
     OcrConfig,
     PipelineConfig,
 )
@@ -437,40 +437,36 @@ def test_event_cleanup_stage_exposes_config_field() -> None:
     assert EventCleanupStage.CONFIG_FIELD == "event_cleanup"
 
 
-# -------------------- doc_cleanup --------------------
+# -------------------- normalize --------------------
 
-def test_doc_cleanup_module_imports() -> None:
-    from subtitles_ocr.pipeline import doc_cleanup
+def test_normalize_module_imports() -> None:
+    from subtitles_ocr.pipeline import normalize
 
-    assert doc_cleanup.STAGE_VERSION == 1
+    assert normalize.STAGE_VERSION == 1
 
 
-def test_final_event_round_trip() -> None:
-    from subtitles_ocr.pipeline.doc_cleanup import FinalEvent
+def test_normalized_event_round_trip() -> None:
+    from subtitles_ocr.pipeline.normalize import NormalizedEvent
 
-    fe = FinalEvent(event_id=7, cleaned_text="hi")
-    restored = FinalEvent.model_validate_json(fe.model_dump_json())
+    ne = NormalizedEvent(event_id=7, cleaned_text="hi")
+    restored = NormalizedEvent.model_validate_json(ne.model_dump_json())
     assert restored.event_id == 7
     assert restored.cleaned_text == "hi"
 
 
-def test_doc_cleanup_result_round_trip() -> None:
-    from subtitles_ocr.pipeline.doc_cleanup import DocCleanupResult, FinalEvent
+def test_normalize_result_round_trip() -> None:
+    from subtitles_ocr.pipeline.normalize import NormalizedEvent, NormalizeResult
 
-    r = DocCleanupResult(events=[FinalEvent(event_id=0, cleaned_text="x")])
-    restored = DocCleanupResult.model_validate_json(r.model_dump_json())
+    r = NormalizeResult(events=[NormalizedEvent(event_id=0, cleaned_text="x")])
+    restored = NormalizeResult.model_validate_json(r.model_dump_json())
     assert len(restored.events) == 1
 
 
-def test_doc_cleanup_stage_construction() -> None:
-    # Scaffold sentinel retired: DocCleanupStage is implemented and covered by
-    # tests/pipeline/test_doc_cleanup.py. We keep a lightweight construction
-    # check here to preserve the scaffold's "every stage's CONFIG_FIELD is
-    # wired" invariant.
-    from subtitles_ocr.pipeline.doc_cleanup import DocCleanupStage
+def test_normalize_stage_construction() -> None:
+    from subtitles_ocr.pipeline.normalize import NormalizeStage
 
-    stage = DocCleanupStage(llm=object())
-    assert stage.CONFIG_FIELD == "doc_cleanup"
+    stage = NormalizeStage()
+    assert stage.CONFIG_FIELD == "normalize"
 
 
 # -------------------- export --------------------
@@ -536,10 +532,10 @@ def test_pipeline_config_event_cleanup_defaults() -> None:
     assert cfg.event_cleanup.chunk_size == 100
 
 
-def test_pipeline_config_doc_cleanup_defaults() -> None:
+def test_pipeline_config_normalize_defaults() -> None:
     cfg = PipelineConfig()
-    assert cfg.doc_cleanup.model is None
-    assert cfg.doc_cleanup.parallelism == 1
+    # NormalizeConfig has no user-facing fields (ADR-0005).
+    assert isinstance(cfg.normalize, NormalizeConfig)
 
 
 def test_pipeline_config_export_defaults() -> None:
@@ -579,6 +575,3 @@ def test_event_cleanup_parallelism_is_no_cache_key() -> None:
     assert _has_no_cache_key_metadata(fields["parallelism"])
 
 
-def test_doc_cleanup_parallelism_is_no_cache_key() -> None:
-    fields = DocCleanupConfig.model_fields
-    assert _has_no_cache_key_metadata(fields["parallelism"])

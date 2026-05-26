@@ -17,7 +17,7 @@ def tmp_workdir(tmp_path: Path) -> Path:
         "08_animation",
         "09_color",
         "10_event_cleanup",
-        "11_doc_cleanup",
+        "11_normalize",
     ):
         (tmp_path / d).mkdir(parents=True)
     return tmp_path
