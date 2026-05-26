@@ -330,13 +330,14 @@ def test_animation_result_round_trip() -> None:
     assert len(restored.events) == 1
 
 
-def test_animation_stage_run_raises_not_implemented(mock_globals) -> None:
+def test_animation_stage_class_attributes(mock_globals) -> None:
     from subtitles_ocr.pipeline.animation import AnimationStage
 
     stage = AnimationStage()
     assert stage.CONFIG_FIELD == "animation"
-    with pytest.raises(NotImplementedError):
-        stage.run(mock_globals, AnimationConfig())
+    assert isinstance(stage.GLOBALS_USED, tuple)
+    # `run()` is implemented by P3.9 MVP (passthrough); behavior covered in
+    # tests/pipeline/test_animation.py.
 
 
 # -------------------- color --------------------
