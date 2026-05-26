@@ -161,12 +161,11 @@ class DocCleanupConfig(BaseModel):
 class ExportConfig(BaseModel):
     default_font: str = "Arial"
     default_font_size: int = 60
+    color_cluster_threshold: float = 10.0
 
 
 class PipelineConfig(BaseModel):
     ar_strategy: Literal["error", "letterbox", "crop"] = "error"
-    synopsis_path: Path | None = None
-    color_cluster_threshold: float = 10.0
     hardsub_audio_track: int | None = None
     raw_audio_track: int | None = None
     hardsub_skip_ranges: list[str] = Field(default_factory=list)

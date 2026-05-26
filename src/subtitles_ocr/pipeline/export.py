@@ -23,7 +23,6 @@ STAGE_VERSION: int = 1
 # ADR-0002 §3 Stage 11
 _POSITION_HCENTER_TOLERANCE_FRAC: float = 0.20  # ±20 % of width center
 _FRZ_OMIT_THRESHOLD_DEG: float = 2.0
-_DEFAULT_COLOR_CLUSTER_THRESHOLD: float = 10.0  # ΔE76
 _NONLINEAR_COMMENT: str = "{!sign: animation non reconstruite!}"
 
 PositionClass = Literal["Bottom", "Top", "Sign"]
@@ -70,7 +69,7 @@ class ExportStage:
             )
 
         style_assignments = _synthesize_styles(
-            per_event, threshold=_DEFAULT_COLOR_CLUSTER_THRESHOLD
+            per_event, threshold=config.color_cluster_threshold
         )
 
         subs = _build_ssa_file(

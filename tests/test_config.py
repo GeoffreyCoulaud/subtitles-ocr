@@ -76,8 +76,8 @@ def test_pipeline_config_instantiable_with_defaults() -> None:
     cfg = PipelineConfig()
 
     assert cfg.ar_strategy == "error"
-    assert cfg.synopsis_path is None
-    assert cfg.color_cluster_threshold == 10.0
+    assert cfg.export.color_cluster_threshold == 10.0
+    assert cfg.doc_cleanup.synopsis_path is None
     assert cfg.hardsub_audio_track is None
     assert cfg.raw_audio_track is None
     assert cfg.hardsub_skip_ranges == []

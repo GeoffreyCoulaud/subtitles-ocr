@@ -1,101 +1,156 @@
 # subtitles-ocr
 
-A work-in-progress hardcoded subtitles extractor
+Extract clean `.ass` subtitle files from videos with hardcoded subtitles
+("hardsubs") by diffing them against a matching subtitle-free raw video.
 
-The goal is to pass as an input a video with hardcoded subtitles (hardsubs) and output a clean, ready to use, `.ass` subtitles file.
-Focus is primarily on fansubbed anime, where no official subs exist, but good quality raws have appeared.
-Dialogue, lyrics and "forced" in-frame translations all count as subtitles.
-Original text positions should not be altered. This is a pure extraction program.
-
-## What is not a subtitle
-
-- Forced text already in the source material (e.g. credits, character names)
-- In-scene text already in the source material (e.g. signs)
-- Generally, any other text not part of the subtitles
+The tool targets fansubbed anime where no official subs exist but a clean
+(typically Blu-ray) raw of the same episode is available. Dialogue, lyrics,
+and forced in-frame translations all count as subtitles. Original positions
+are preserved — this is a pure extraction tool, not a re-typesetter.
 
 ## How it works
 
-The pipeline runs 9 sequential steps:
+The pipeline runs 9 sequential stages (ADR-0002 §2, revised by ADR-0003 §3).
+Stages 3–5 (diff / mask / compose) are streamed inside Stage 6 and do not
+appear as separate orchestrated stages.
 
-| Step | Name           | Description                                                                                                                                       |
-|------|----------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1    | Extract        | ffmpeg extracts every frame at native FPS                                                                                                         |
-| 2    | Frame filter   | Frames within any `--skip` range are dropped; remaining frames are written to `002-filtered_manifest.json`                                        |
-| 3    | pHash filter   | Consecutive frames with an identical perceptual hash are collapsed into one group                                                                 |
-| 4    | Pre-filter     | `llava:7b` classifies each group as containing text or not — fast binary pass to skip blank frames                                                |
-| 5    | Analyze        | `qwen3-vl:4b` extracts text, style, color, and position from each text-bearing group                                                             |
-| 6    | Group events   | Consecutive identical analyses are merged into subtitle events                                                                                    |
-| 7    | Fuzzy group    | Similar events are clustered using trigram similarity; short gaps between similar events are bridged                                              |
-| 8    | Reconcile      | Each cluster is collapsed into one canonical event — `gemma3:1b-it-qat` reconciles noisy text readings; majority vote picks style/color           |
-| 9    | Serialize      | The reconciled events are written to an ASS subtitle file                                                                                         |
+| #  | Stage           | Description                                                                                                  |
+|----|-----------------|--------------------------------------------------------------------------------------------------------------|
+| 1  | Conform         | ffmpeg downscales the raw to the fansub's resolution; output cached as lossless FFV1 MKV                     |
+| 2  | Alignment       | Hybrid audio (silero-VAD + hierarchical cross-correlation) + phash refinement; phash-only fallback           |
+| 3  | OCR             | PaddleOCR PP-OCRv5 server runs on composed (diff×mask) frames; streaming `iter_composed_frames` upstream     |
+| 4  | Group           | Per-quad trajectory tracking groups detections into events; identical text + IoU > 0.5 continues a trajectory |
+| 5  | Animation       | MVP: passthrough — emits a static `AnimatedEvent` per group event. Reserved for `\move` / `\fad` (Phase 6)   |
+| 6  | Color           | Per-event color extraction: quad-rectified temporal median → Otsu → distance-transform → HSV mode clustering  |
+| 7  | Event cleanup   | Per-event LLM call reconciles OCR variants and fixes confusables; skipped if all variants strictly identical  |
+| 8  | Doc cleanup     | Single LLM call over the whole episode for narrative coherence; optional `--synopsis` injected into prompt   |
+| 9  | Export          | pysubs2 writes `.ass`; styles synthesised by position × color cluster (ΔE76 in LAB)                          |
 
-Each step writes its output to the work directory, named `NNN-<file>` where `NNN` is the step number (e.g. `003-filter.jsonl`). Delete a file to force that step to re-run on the next invocation.
+Stages 3-5 of ADR-0002 (diff, mask, compose) live as a streaming library
+(`pipeline/frame_processing/`) owned by the OCR stage rather than as
+independent CLI-visible stages.
+
+## Workdir layout
+
+Each run writes a workdir of numbered sub-directories (ADR-0003 §5):
+
+```
+workdir/
+  01_conform/        raw.mkv, raw.meta.json
+  02_alignment/      hardsub_audio.wav, raw_audio.wav, *.meta.json, alignment.json
+  03_diff/           (empty in prod, debug/ under --debug-images)
+  04_mask/           frames/<idx>.png
+  05_compose/        (empty in prod, frames/<idx>.png under --debug-images)
+  06_ocr/            results.jsonl, results.meta.json
+  07_group/          events.json, events.meta.json
+  08_animation/      animation.json, animation.meta.json
+  09_color/          colors.json, colors.meta.json
+  10_event_cleanup/  cleaned.jsonl, cleaned.meta.json
+  11_doc_cleanup/    cleaned_final.json, cleaned_final.meta.json
+  pipeline.log
+```
+
+The final `.ass` is written to the path given by `--out`, not to the workdir.
+
+## Resume strategy
+
+Resume is implicit — there is no `--resume` flag.
+
+- **Fast stages** (1, 2, 4, 5, 6, 8, 9) write an atomic JSON or final artefact
+  at end-of-stage plus a `*.meta.json` sidecar recording the inputs and
+  config that affect the output. On re-run, the sidecar is compared against
+  the current inputs+config; if they match the stage is skipped, otherwise
+  it re-runs.
+- **Slow stages** (3 OCR, 7 event cleanup) append per-chunk to a JSONL
+  (`JsonlWriter`). After a crash, the next run re-reads the JSONL and
+  restarts after the last persisted entry.
+- Cache-affecting fields are listed in each stage's `cache_invalidating_dict`
+  (everything except runtime knobs like parallelism — see ADR-0004 §4).
+- To force a stage to re-run, delete its sub-directory or the whole workdir.
+
+## CLI
+
+```
+subtitles-ocr \
+  --hardsub <fansub.avi> \
+  --raw <bluray.mkv> \
+  --out <output.ass> \
+  --workdir <intermediates/> \
+  [--language latin] \
+  [--synopsis path/to/synopsis.md] \
+  [--debug-images] \
+  [--ar-strategy error|letterbox|crop] \
+  [--hardsub-audio-track <idx>] \
+  [--raw-audio-track <idx>] \
+  [--hardsub-skip "HH:MM:SS-HH:MM:SS"] (repeatable) \
+  [--raw-skip "HH:MM:SS-HH:MM:SS"] (repeatable) \
+  [--ocr-device auto|cuda|rocm|cpu] \
+  [--event-cleanup-model <ollama-name>] \
+  [--event-cleanup-parallelism <int>] \
+  [--doc-cleanup-model <ollama-name>] \
+  [--doc-cleanup-parallelism <int>] \
+  [--color-cluster-threshold <float>] \
+  [--debug]
+```
+
+### Flags
+
+| Flag                            | Default     | Description                                                                          |
+|---------------------------------|-------------|--------------------------------------------------------------------------------------|
+| `--hardsub`                     | (required)  | Path to the hardsubbed video (fansub)                                                |
+| `--raw`                         | (required)  | Path to the clean raw video (Blu-ray / WEB-DL)                                       |
+| `--out`                         | (required)  | Output `.ass` file path                                                              |
+| `--workdir`                     | (required)  | Directory for intermediate artefacts                                                 |
+| `--language`                    | `latin`     | PaddleOCR language code                                                              |
+| `--synopsis`                    | none        | Markdown file fed to the doc-cleanup LLM for narrative coherence                     |
+| `--debug-images`                | off         | Persist diff/compose debug PNGs (large; for diagnostics only)                        |
+| `--ar-strategy`                 | `error`     | Aspect-ratio mismatch policy (only `error` is implemented in MVP)                    |
+| `--hardsub-audio-track`         | none        | Audio track index in the hardsub for audio alignment (Stage 2a)                       |
+| `--raw-audio-track`             | none        | Audio track index in the raw for audio alignment (Stage 2a)                          |
+| `--hardsub-skip`                | none        | Time range (HH:MM:SS-HH:MM:SS) in the hardsub to exclude from alignment (repeatable) |
+| `--raw-skip`                    | none        | Time range to exclude from the raw side of the alignment (repeatable)                |
+| `--ocr-device`                  | `auto`      | `auto` warns and falls back to CPU on GPU failure; explicit values hard-fail         |
+| `--event-cleanup-model`         | none        | Ollama model name used by Stage 7                                                    |
+| `--event-cleanup-parallelism`   | `1`         | ThreadPoolExecutor size for Stage 7                                                  |
+| `--doc-cleanup-model`           | none        | Ollama model name used by Stage 8                                                    |
+| `--doc-cleanup-parallelism`     | `1`         | Sequential by default; reserved for a future chunked-fallback path                   |
+| `--color-cluster-threshold`     | `10.0`      | ΔE76 distance threshold for grouping events into shared `.ass` styles                |
+| `--debug`                       | off         | Lowers stdout log level to DEBUG                                                     |
 
 ## Setup
 
 ### Prerequisites
 
 - **[uv](https://docs.astral.sh/uv/)** — manages Python and dependencies
-- **[ffmpeg](https://ffmpeg.org/download.html)** — used to extract frames and read video metadata
-- **An OpenAI-compatible inference server** — [Ollama](https://ollama.com) is the recommended option; see [inference setup](docs/inference-setup.md) for remote setups
+- **[ffmpeg](https://ffmpeg.org/download.html)** — `ffmpeg` + `ffprobe` on `$PATH`
+- **An OpenAI-compatible LLM server** — [Ollama](https://ollama.com) is
+  recommended for Stage 7 and Stage 8; see
+  [docs/inference-setup.md](docs/inference-setup.md) for remote and
+  multi-machine setups
 
 ### Install
 
 ```bash
-# Clone the repo
 git clone https://github.com/GeoffreyCoulaud/subtitles-ocr
 cd subtitles-ocr
-
-# Install dependencies with uv
 uv sync
 ```
 
-### Inference server
-
-The pipeline requires three VLM models. See [docs/inference-setup.md](docs/inference-setup.md) for model details and how to configure local Ollama, a remote machine, or a multi-machine LiteLLM proxy.
-
-## Usage
+### Run
 
 ```bash
-uv run subtitles-ocr <video>
-```
-
-This produces `<video>.ass` next to the input file, and a `<video>_subtitles_ocr/` work directory containing intermediate files (frames, analysis JSONL, etc.).
-
-### Options
-
-| Option                   | Default                  | Description                                                                                |
-|--------------------------|--------------------------|--------------------------------------------------------------------------------------------|
-| `-o`, `--output`         | `<video>.ass`            | Path to the output `.ass` file                                                             |
-| `-w`, `--workdir`        | `<video>_subtitles_ocr/` | Directory for intermediate files                                                           |
-| `--filter-model`         | `llava:7b`               | Model for pre-filtering                                                                    |
-| `--filter-workers`       | `4`                      | Parallel workers for pre-filtering                                                         |
-| `--analyze-model`        | `qwen3-vl:4b`            | Model for VLM analysis                                                                     |
-| `--analyze-workers`      | `1`                      | Parallel workers for VLM analysis (requires `OLLAMA_NUM_PARALLEL` ≥ value in Ollama's env) |
-| `--reconcile-model`      | `gemma3:1b-it-qat`       | Model for text reconciliation                                                              |
-| `--reconcile-workers`    | `8`                      | Parallel workers for reconciliation                                                        |
-| `--litellm-config`       | —                        | Path to a `litellm.yaml`; auto-derives worker counts per model from `max_parallel_requests` (overridden by explicit `--*-workers` flags) |
-| `--edge-diff-threshold`  | `8.0`                    | Edge difference threshold for frame grouping                                               |
-| `--similarity-threshold` | `0.75`                   | Trigram similarity threshold for fuzzy event grouping                                      |
-| `--gap-tolerance`        | `0.5`                    | Max gap in seconds to bridge between similar events                                        |
-| `--skip`                 | —                        | Skip frames in this time range (`HH:MM:SS`, `MM:SS`, or `SS`). Can be repeated for multiple ranges. |
-| `--inference-url`        | `http://localhost:11434` | Base URL of the OpenAI-compatible inference server                                         |
-| `--retry-max-attempts`   | `10`                     | Max retry attempts per element for LLM calls                                               |
-| `--retry-base-delay`     | `1.0`                    | Base delay in seconds for exponential backoff                                              |
-| `--retry-max-delay`      | `30.0`                   | Maximum delay cap in seconds for retry backoff                                             |
-
-### Example
-
-```bash
-# Basic usage
-uv run subtitles-ocr episode01.mkv
-
-# Custom output path and model
-uv run subtitles-ocr episode01.mkv -o subs/episode01.ass --analyze-model llava:13b
+uv run subtitles-ocr \
+  --hardsub /path/to/fansub.mkv \
+  --raw /path/to/bluray.mkv \
+  --out /path/to/episode01.ass \
+  --workdir /path/to/work
 ```
 
 ## Documentation
 
 - [Install, test, and run commands](docs/development.md)
-- [Inference setup — local Ollama, remote machine, or LiteLLM proxy](docs/inference-setup.md)
-- [Example frames showing supported subtitle types](docs/examples/README.md)
+- [Inference setup](docs/inference-setup.md)
+- [ADR-0001 — initial scoping](docs/ADR-0001-OCR-Pipeline.md)
+- [ADR-0002 — detailed pipeline design](docs/ADR-0002-Pipeline-Detailed-Design.md)
+- [ADR-0003 — animation reconstruction scope](docs/ADR-0003-Animation-Reconstruction.md)
+- [ADR-0004 — shared infrastructure](docs/ADR-0004-Shared-Infrastructure.md)
