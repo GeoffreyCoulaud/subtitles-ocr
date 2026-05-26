@@ -55,12 +55,16 @@ class ExportStage:
         text_by_id = {e.event_id: e.cleaned_text for e in doc.events}
 
         # Build a working list of (event, EventColors, position, cleaned_text).
-        # Events with style_supported=False are routed to the Default group, the
-        # other events are clustered by color within their position.
+        # Events absent from text_by_id were pruned by the normalize stage
+        # (OCR noise, ADR-0005) — skip them silently. Events with
+        # style_supported=False are routed to the Default group, the other
+        # events are clustered by color within their position.
         per_event: list[_PreparedEvent] = []
         for ev in animation.events:
+            text = text_by_id.get(ev.event_id)
+            if text is None:
+                continue
             ec = colors_by_id[ev.event_id]
-            text = text_by_id[ev.event_id]
             position = _classify_position(
                 ev.quad_median, globals.fansub_width, globals.fansub_height
             )

@@ -109,6 +109,37 @@ def _make_doc(*items: tuple[int, str]) -> DocCleanupResult:
 
 
 # ---------------------------------------------------------------------------
+# Pruned-event tolerance (ADR-0005): the normalize stage may drop events as
+# OCR noise; their event_id will be absent from text_by_id while still
+# present in animation/colors. Export must skip them silently, not crash.
+# ---------------------------------------------------------------------------
+
+
+def test_export_skips_event_when_text_missing(
+    mock_globals: PipelineGlobals,
+) -> None:
+    ev0 = _make_event(0, _bottom_quad())
+    ev1 = _make_event(1, _bottom_quad())  # this event will be missing from doc
+    ev2 = _make_event(2, _bottom_quad())
+    anim = AnimationAnalysisResult(events=[ev0, ev1, ev2], stats={})
+    colors = _make_colors(
+        (0, (255, 255, 255), (0, 0, 0), True),
+        (1, (255, 255, 255), (0, 0, 0), True),
+        (2, (255, 255, 255), (0, 0, 0), True),
+    )
+    doc = _make_doc((0, "first"), (2, "third"))  # event_id=1 missing
+    _write_inputs(mock_globals.workdir, anim, colors, doc)
+
+    result = ExportStage().run(mock_globals, ExportConfig())
+
+    assert result.event_count == 2
+    subs = pysubs2.load(result.out_path_written)
+    assert len(subs) == 2
+    assert subs[0].text == "first"
+    assert subs[1].text == "third"
+
+
+# ---------------------------------------------------------------------------
 # Basic cases
 # ---------------------------------------------------------------------------
 
