@@ -14,6 +14,7 @@ from typing import ClassVar, Iterable
 from pydantic import BaseModel
 
 from subtitles_ocr.config import FrameProcessingConfig, OcrConfig, PipelineGlobals
+from subtitles_ocr.exceptions import PipelineError
 from subtitles_ocr.io import JsonlWriter
 from subtitles_ocr.meta import BaseMeta, cache_invalidating_dict
 from subtitles_ocr.ocr_engine.protocol import OcrEngine
@@ -22,6 +23,8 @@ from subtitles_ocr.pipeline.frame_processing import (
     ComposedFrame,
     iter_composed_frames,
 )
+
+STAGE_NAME: str = "06_ocr"
 
 STAGE_VERSION: int = 1
 
@@ -62,17 +65,23 @@ class OcrStage:
         globals: PipelineGlobals,
         config: OcrConfig,
         *,
-        alignment_result: AlignmentResult | None = None,
-        frame_processing_config: FrameProcessingConfig | None = None,
         composed_frames: Iterable[ComposedFrame] | None = None,
     ) -> OcrResult:
+        """OcrStage entry point (ADR-0004 §3.1 / §3.3).
+
+        The strict orchestrator contract is ``run(globals, config) -> Result``.
+        The ``composed_frames`` keyword is a test-only injection point used by
+        unit + integration tests that synthesize the diff/mask/compose stream
+        directly. In production callers omit it; the stage then reads
+        ``02_alignment/alignment.json`` from the workdir and constructs the
+        compose iterator itself via ``iter_composed_frames``.
+        """
         if self.ocr_engine is None:
             from subtitles_ocr.ocr_engine.paddle import PaddleOcrEngine
 
             self.ocr_engine = PaddleOcrEngine(lang=config.language, device=config.device)
 
-        if frame_processing_config is None:
-            frame_processing_config = FrameProcessingConfig()
+        frame_processing_config = config.frame_processing
 
         out_dir = globals.workdir / "06_ocr"
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -90,10 +99,7 @@ class OcrStage:
                         frames_with_detections += 1
 
             if composed_frames is None:
-                if alignment_result is None:
-                    raise ValueError(
-                        "OcrStage.run requires either composed_frames or alignment_result"
-                    )
+                alignment_result = self._load_alignment(globals)
                 composed_frames = iter_composed_frames(
                     globals,
                     alignment_result,
@@ -126,6 +132,30 @@ class OcrStage:
             frames_with_detections=frames_with_detections,
         )
 
+    def _load_alignment(self, globals: PipelineGlobals) -> AlignmentResult:
+        """Read AlignmentResult from ``02_alignment/alignment.json``.
+
+        Per ADR-0004 §3.1 / §3.3 every cross-stage dependency reaches its
+        consumer through the workdir, never through the orchestrator's call
+        signature. Missing or invalid file → ``PipelineError`` with a hint
+        pointing the operator at the upstream stage to re-run.
+        """
+        path = globals.workdir / "02_alignment" / "alignment.json"
+        if not path.exists():
+            raise PipelineError(
+                f"alignment.json not found at {path}",
+                stage=STAGE_NAME,
+                hint="Run the alignment stage first (it writes 02_alignment/alignment.json).",
+            )
+        try:
+            return AlignmentResult.model_validate_json(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise PipelineError(
+                f"alignment.json is corrupted or schema-incompatible: {exc}",
+                stage=STAGE_NAME,
+                hint="Delete 02_alignment/ to force the alignment stage to recompute.",
+            ) from exc
+
     def _write_sidecar(
         self,
         *,
@@ -147,12 +177,12 @@ class OcrStage:
             fps = globals_subset["fps"]
             globals_subset["fps"] = f"{fps.numerator}/{fps.denominator}"
         meta = BaseMeta(
-            stage_name="06_ocr",
+            stage_name=STAGE_NAME,
             stage_version=STAGE_VERSION,
             config=config_payload,
             globals_subset=globals_subset,
             input_fingerprints={},
             written_at=datetime.now(tz=timezone.utc),
         )
-        sidecar_path = globals.workdir / "06_ocr" / "results.meta.json"
+        sidecar_path = globals.workdir / STAGE_NAME / "results.meta.json"
         sidecar_path.write_text(meta.model_dump_json(indent=2))

@@ -109,8 +109,7 @@ def test_ocr_partial_then_resume_continues_from_last_index(
     engine = FakeOcrEngine()
     OcrStage(ocr_engine=engine).run(
         integration_globals,
-        OcrConfig(),
-        frame_processing_config=FrameProcessingConfig(),
+        OcrConfig(frame_processing=FrameProcessingConfig()),
         composed_frames=iter(_composed_frames(5)),
     )
 
@@ -142,8 +141,7 @@ def test_ocr_resume_with_trailing_partial_line_truncates_and_continues(
     engine = FakeOcrEngine()
     OcrStage(ocr_engine=engine).run(
         integration_globals,
-        OcrConfig(),
-        frame_processing_config=FrameProcessingConfig(),
+        OcrConfig(frame_processing=FrameProcessingConfig()),
         composed_frames=iter(_composed_frames(5)),
     )
 
@@ -176,8 +174,7 @@ def test_ocr_midfile_corruption_raises_cache_corruption_error(
     with pytest.raises(CacheCorruptionError):
         OcrStage(ocr_engine=engine).run(
             integration_globals,
-            OcrConfig(),
-            frame_processing_config=FrameProcessingConfig(),
+            OcrConfig(frame_processing=FrameProcessingConfig()),
             composed_frames=iter(_composed_frames(5)),
         )
 

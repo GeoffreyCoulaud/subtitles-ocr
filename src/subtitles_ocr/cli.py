@@ -9,7 +9,6 @@ from fractions import Fraction
 from pathlib import Path
 
 from subtitles_ocr.config import (
-    FrameProcessingConfig,
     PipelineConfig,
     PipelineGlobals,
     section_for,
@@ -84,15 +83,14 @@ def _build_globals(ns: argparse.Namespace, ffmpeg: FfmpegRunner) -> PipelineGlob
 
 
 def _build_config(ns: argparse.Namespace) -> PipelineConfig:
-    config = PipelineConfig(
-        ar_strategy=ns.ar_strategy,
-        hardsub_audio_track=ns.hardsub_audio_track,
-        raw_audio_track=ns.raw_audio_track,
-        hardsub_skip_ranges=list(ns.hardsub_skip or []),
-        raw_skip_ranges=list(ns.raw_skip or []),
-    )
-    # Route per-stage flags into their owning sub-configs (ADR-0002 §4).
+    config = PipelineConfig()
+    # Route per-stage flags into their owning sub-configs (ADR-0002 §4):
+    # nothing lives on PipelineConfig root.
     config.conform.ar_strategy = ns.ar_strategy
+    config.alignment.hardsub_audio_track = ns.hardsub_audio_track
+    config.alignment.raw_audio_track = ns.raw_audio_track
+    config.alignment.hardsub_skip_ranges = list(ns.hardsub_skip or [])
+    config.alignment.raw_skip_ranges = list(ns.raw_skip or [])
     config.ocr.language = ns.language
     config.ocr.device = ns.ocr_device
     config.event_cleanup.model = ns.event_cleanup_model
@@ -173,9 +171,11 @@ def setup_logging(stdout_level: int, log_file: Path) -> None:
 def build_stages(config: PipelineConfig) -> list:
     """Return the 9 MVP stages in pipeline order (ADR-0002 §2).
 
-    Stages that depend on extra constructor wiring (root-level audio tracks,
-    skip ranges) are instantiated here. The pure-config stages take no
-    arguments.
+    Per ADR-0004 §3.1 / §3.3 every stage exposes the strict ``run(globals,
+    config)`` signature; the orchestrator does not chain results between
+    stages. Any cross-stage dependency must be re-read from the workdir by the
+    consumer (e.g. OcrStage loads ``02_alignment/alignment.json`` itself,
+    GroupStage loads ``06_ocr/results.jsonl``, …).
     """
     from subtitles_ocr.pipeline.alignment.stage import AlignmentStage
     from subtitles_ocr.pipeline.animation import AnimationStage
@@ -189,12 +189,7 @@ def build_stages(config: PipelineConfig) -> list:
 
     return [
         ConformStage(),
-        AlignmentStage(
-            hardsub_audio_track=config.hardsub_audio_track,
-            raw_audio_track=config.raw_audio_track,
-            hardsub_skip_ranges=list(config.hardsub_skip_ranges),
-            raw_skip_ranges=list(config.raw_skip_ranges),
-        ),
+        AlignmentStage(),
         OcrStage(),
         GroupStage(),
         AnimationStage(),
@@ -211,22 +206,9 @@ def run_pipeline(
     stages: list | None = None,
 ) -> None:
     actual_stages = stages if stages is not None else build_stages(config)
-    results: dict[str, object] = {}
     for stage in actual_stages:
         stage_config = section_for(config, stage)
-        kwargs: dict[str, object] = {}
-        # OcrStage owns frame_processing and (in production) consumes the
-        # previous stage's AlignmentResult to drive the diff/mask/compose loop.
-        # Tests inject `composed_frames` directly and bypass this branch.
-        if type(stage).__name__ == "OcrStage":
-            alignment_result = results.get("alignment")
-            if alignment_result is not None:
-                kwargs["alignment_result"] = alignment_result
-                kwargs["frame_processing_config"] = config.frame_processing
-        result = stage.run(globals, stage_config, **kwargs)
-        results[stage.CONFIG_FIELD] = result
-    # Touch FrameProcessingConfig import so static checkers don't drop it.
-    _ = FrameProcessingConfig
+        stage.run(globals, stage_config)
 
 
 def main(

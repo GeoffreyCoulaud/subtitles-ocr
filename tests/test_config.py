@@ -75,16 +75,19 @@ def test_pipeline_globals_json_round_trip_preserves_other_fractions(tmp_path: Pa
 def test_pipeline_config_instantiable_with_defaults() -> None:
     cfg = PipelineConfig()
 
-    assert cfg.ar_strategy == "error"
+    # ar_strategy / audio_tracks / skip_ranges no longer live at the root —
+    # they belong to ConformConfig and AlignmentConfig respectively (issues 3 & 4).
+    assert cfg.conform.ar_strategy == "error"
+    assert cfg.alignment.hardsub_audio_track is None
+    assert cfg.alignment.raw_audio_track is None
+    assert cfg.alignment.hardsub_skip_ranges == []
+    assert cfg.alignment.raw_skip_ranges == []
     assert cfg.export.color_cluster_threshold == 10.0
     assert cfg.doc_cleanup.synopsis_path is None
-    assert cfg.hardsub_audio_track is None
-    assert cfg.raw_audio_track is None
-    assert cfg.hardsub_skip_ranges == []
-    assert cfg.raw_skip_ranges == []
     assert isinstance(cfg.conform, ConformConfig)
     assert isinstance(cfg.alignment, AlignmentConfig)
-    assert isinstance(cfg.frame_processing, FrameProcessingConfig)
+    # FrameProcessingConfig is now owned by OcrConfig (issue 1 cleanup).
+    assert isinstance(cfg.ocr.frame_processing, FrameProcessingConfig)
     assert isinstance(cfg.ocr, OcrConfig)
     assert isinstance(cfg.group, GroupConfig)
     assert isinstance(cfg.animation, AnimationConfig)
@@ -92,6 +95,43 @@ def test_pipeline_config_instantiable_with_defaults() -> None:
     assert isinstance(cfg.event_cleanup, EventCleanupConfig)
     assert isinstance(cfg.doc_cleanup, DocCleanupConfig)
     assert isinstance(cfg.export, ExportConfig)
+
+
+def test_pipeline_config_has_no_root_ar_strategy() -> None:
+    """Issue 3: ar_strategy must live only in ConformConfig, not on the root."""
+    cfg = PipelineConfig()
+    assert not hasattr(cfg, "ar_strategy")
+
+
+def test_pipeline_config_has_no_root_audio_or_skip_ranges() -> None:
+    """Issue 4: audio tracks and skip ranges live on AlignmentConfig only."""
+    cfg = PipelineConfig()
+    for name in (
+        "hardsub_audio_track",
+        "raw_audio_track",
+        "hardsub_skip_ranges",
+        "raw_skip_ranges",
+    ):
+        assert not hasattr(cfg, name), f"{name} must not be on PipelineConfig root"
+
+
+def test_pipeline_config_has_no_root_frame_processing() -> None:
+    """frame_processing is owned by OcrConfig now, not the root config."""
+    cfg = PipelineConfig()
+    assert not hasattr(cfg, "frame_processing")
+
+
+def test_ocr_config_embeds_frame_processing() -> None:
+    cfg = OcrConfig()
+    assert isinstance(cfg.frame_processing, FrameProcessingConfig)
+
+
+def test_alignment_config_audio_tracks_and_skip_ranges_defaults() -> None:
+    cfg = AlignmentConfig()
+    assert cfg.hardsub_audio_track is None
+    assert cfg.raw_audio_track is None
+    assert cfg.hardsub_skip_ranges == []
+    assert cfg.raw_skip_ranges == []
 
 
 def test_section_for_returns_correct_subconfig() -> None:

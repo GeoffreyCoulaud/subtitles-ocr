@@ -434,8 +434,8 @@ def test_run_user_skip_ranges_excluded_from_denominator(tmp_workdir: Path) -> No
         audio_loader=FakeAudioLoader(),
         frame_source=fs,
         raw_total_frames=15,
-        hardsub_skip_ranges=["00:00:00-00:00:00.208"],
     )
+    cfg = cfg.model_copy(update={"hardsub_skip_ranges": ["00:00:00-00:00:00.208"]})
     result = stage.run(globals_, cfg)
     # 5 frames skipped → user_skipped_ratio = 0.5
     assert result.user_skipped_ratio == pytest.approx(0.5, abs=0.01)
@@ -537,15 +537,13 @@ def test_run_audio_branch_aligns_via_xcorr(tmp_workdir: Path) -> None:
     phasher = _identity_phasher_for_offset(0, 30)
     fs = FakeFrameSource(phasher)
 
-    cfg = AlignmentConfig()
+    cfg = AlignmentConfig(hardsub_audio_track=0, raw_audio_track=1)
     stage = AlignmentStage(
         ffmpeg=ffmpeg,
         vad=vad,
         audio_loader=loader,
         frame_source=fs,
         raw_total_frames=30,
-        hardsub_audio_track=0,
-        raw_audio_track=1,
     )
     result = stage.run(globals_, cfg)
     assert result.method_used == "audio+phash_refinement"
@@ -564,10 +562,11 @@ def test_run_audio_extract_failure_falls_back_to_phash(tmp_workdir: Path) -> Non
         audio_loader=FakeAudioLoader(),
         frame_source=fs,
         raw_total_frames=15,
-        hardsub_audio_track=0,
-        raw_audio_track=1,
     )
-    result = stage.run(globals_, AlignmentConfig())
+    result = stage.run(
+        globals_,
+        AlignmentConfig(hardsub_audio_track=0, raw_audio_track=1),
+    )
     assert result.method_used == "phash_only"
     # Warning about audio fallback
     assert any("audio" in w.lower() for w in result.warnings)
@@ -608,12 +607,15 @@ def test_run_phash_refinement_disagreement_triggers_fallback(tmp_workdir: Path) 
         audio_loader=loader,
         frame_source=fs,
         raw_total_frames=30,
-        hardsub_audio_track=0,
-        raw_audio_track=1,
     )
     result = stage.run(
         globals_,
-        AlignmentConfig(threshold_disagree=0.30, orphan_ratio_max=1.0),
+        AlignmentConfig(
+            threshold_disagree=0.30,
+            orphan_ratio_max=1.0,
+            hardsub_audio_track=0,
+            raw_audio_track=1,
+        ),
     )
     # Falls back to phash_only when refinement disagrees badly
     assert result.method_used == "phash_only"

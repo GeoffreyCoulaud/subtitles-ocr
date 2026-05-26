@@ -160,11 +160,12 @@ def test_parse_args_ar_strategy_default(tmp_path: Path) -> None:
     assert config.conform.ar_strategy == "error"
 
 
-def test_parse_args_ar_strategy_root_mirror(tmp_path: Path) -> None:
-    """Root field still set for backward-compat (drives AlignmentStage instantiation
-    in build_stages even though Conform reads from its sub-config)."""
+def test_parse_args_ar_strategy_only_on_conform(tmp_path: Path) -> None:
+    """Issue 3: ar_strategy now lives exclusively in ConformConfig — the root
+    field has been removed to eliminate the duplication."""
     _globals, config, _debug = _parse([*_base_args(tmp_path), "--ar-strategy", "crop"])
-    assert config.ar_strategy == "crop"
+    assert config.conform.ar_strategy == "crop"
+    assert not hasattr(config, "ar_strategy")
 
 
 def test_parse_args_synopsis_routed_to_doc_cleanup(tmp_path: Path) -> None:
@@ -216,17 +217,18 @@ def test_parse_args_doc_cleanup_parallelism_routed(tmp_path: Path) -> None:
     assert config.doc_cleanup.parallelism == 3
 
 
-def test_parse_args_hardsub_audio_track(tmp_path: Path) -> None:
+def test_parse_args_hardsub_audio_track_routed_to_alignment(tmp_path: Path) -> None:
+    """Issue 4: audio-track flags participate in AlignmentStage's sidecar."""
     _globals, config, _debug = _parse([*_base_args(tmp_path), "--hardsub-audio-track", "1"])
-    assert config.hardsub_audio_track == 1
+    assert config.alignment.hardsub_audio_track == 1
 
 
-def test_parse_args_raw_audio_track(tmp_path: Path) -> None:
+def test_parse_args_raw_audio_track_routed_to_alignment(tmp_path: Path) -> None:
     _globals, config, _debug = _parse([*_base_args(tmp_path), "--raw-audio-track", "0"])
-    assert config.raw_audio_track == 0
+    assert config.alignment.raw_audio_track == 0
 
 
-def test_parse_args_hardsub_skip_repeatable(tmp_path: Path) -> None:
+def test_parse_args_hardsub_skip_repeatable_routed_to_alignment(tmp_path: Path) -> None:
     _globals, config, _debug = _parse(
         [
             *_base_args(tmp_path),
@@ -236,15 +238,18 @@ def test_parse_args_hardsub_skip_repeatable(tmp_path: Path) -> None:
             "00:01:00-00:01:30",
         ]
     )
-    assert config.hardsub_skip_ranges == ["00:00:00-00:00:10", "00:01:00-00:01:30"]
+    assert config.alignment.hardsub_skip_ranges == [
+        "00:00:00-00:00:10",
+        "00:01:00-00:01:30",
+    ]
 
 
-def test_parse_args_hardsub_skip_empty_default(tmp_path: Path) -> None:
+def test_parse_args_hardsub_skip_empty_default_on_alignment(tmp_path: Path) -> None:
     _globals, config, _debug = _parse(_base_args(tmp_path))
-    assert config.hardsub_skip_ranges == []
+    assert config.alignment.hardsub_skip_ranges == []
 
 
-def test_parse_args_raw_skip_repeatable(tmp_path: Path) -> None:
+def test_parse_args_raw_skip_repeatable_routed_to_alignment(tmp_path: Path) -> None:
     _globals, config, _debug = _parse(
         [
             *_base_args(tmp_path),
@@ -254,7 +259,10 @@ def test_parse_args_raw_skip_repeatable(tmp_path: Path) -> None:
             "00:02:00-00:02:15",
         ]
     )
-    assert config.raw_skip_ranges == ["00:00:00-00:00:05", "00:02:00-00:02:15"]
+    assert config.alignment.raw_skip_ranges == [
+        "00:00:00-00:00:05",
+        "00:02:00-00:02:15",
+    ]
 
 
 def test_parse_args_argv_none_uses_sys_argv(
@@ -331,20 +339,37 @@ def test_build_stages_in_pipeline_order() -> None:
     ]
 
 
-def test_build_stages_alignment_receives_root_audio_track_and_skip_ranges() -> None:
-    """Root-level audio_track/skip_ranges flags feed AlignmentStage via its ctor."""
+def test_build_stages_alignment_constructed_without_audio_or_skip_kwargs() -> None:
+    """Issue 4: AlignmentStage no longer takes audio/skip via constructor —
+    those values are routed through ``config.alignment`` and read inside ``run()``.
+    """
+    from subtitles_ocr.config import AlignmentConfig
+
     cfg = PipelineConfig(
-        hardsub_audio_track=2,
-        raw_audio_track=3,
-        hardsub_skip_ranges=["00:00:00-00:00:05"],
-        raw_skip_ranges=["00:00:10-00:00:15"],
+        alignment=AlignmentConfig(
+            hardsub_audio_track=2,
+            raw_audio_track=3,
+            hardsub_skip_ranges=["00:00:00-00:00:05"],
+            raw_skip_ranges=["00:00:10-00:00:15"],
+        )
     )
     stages = build_stages(cfg)
     alignment = next(s for s in stages if type(s).__name__ == "AlignmentStage")
-    assert alignment.hardsub_audio_track == 2
-    assert alignment.raw_audio_track == 3
-    assert alignment.hardsub_skip_ranges == ["00:00:00-00:00:05"]
-    assert alignment.raw_skip_ranges == ["00:00:10-00:00:15"]
+    # The values must reach the stage via its sub-config, not via attributes.
+    assert cfg.alignment.hardsub_audio_track == 2
+    assert cfg.alignment.raw_audio_track == 3
+    assert cfg.alignment.hardsub_skip_ranges == ["00:00:00-00:00:05"]
+    assert cfg.alignment.raw_skip_ranges == ["00:00:10-00:00:15"]
+    # Constructor must not be carrying these as instance attributes anymore.
+    for forbidden in (
+        "hardsub_audio_track",
+        "raw_audio_track",
+        "hardsub_skip_ranges",
+        "raw_skip_ranges",
+    ):
+        assert not hasattr(alignment, forbidden), (
+            f"AlignmentStage must not store {forbidden!r} as an instance attribute"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -417,6 +442,34 @@ def test_run_pipeline_propagates_pipeline_error(
 ) -> None:
     with pytest.raises(AlignmentRatioTooLow):
         run_pipeline(mock_globals, PipelineConfig(), stages=[FakeStage()])
+
+
+def test_run_pipeline_invokes_stages_with_only_globals_and_config(
+    mock_globals: PipelineGlobals,
+) -> None:
+    """Issue 1: orchestrator must use the strict ``run(globals, config)``
+    signature (ADR-0004 §3.1 / §3.3) — no kwargs, no result chaining.
+    """
+
+    class StrictSignatureStage:
+        CONFIG_FIELD = "ocr"
+        GLOBALS_USED: tuple[str, ...] = ()
+        STAGE_VERSION = 1
+
+        def __init__(self) -> None:
+            self.received_args: tuple | None = None
+            self.received_kwargs: dict | None = None
+
+        def run(self, *args, **kwargs):  # noqa: D401
+            self.received_args = args
+            self.received_kwargs = dict(kwargs)
+            return None
+
+    s = StrictSignatureStage()
+    run_pipeline(mock_globals, PipelineConfig(), stages=[s])
+    assert s.received_args is not None
+    assert len(s.received_args) == 2
+    assert s.received_kwargs == {}
 
 
 # ---------------------------------------------------------------------------

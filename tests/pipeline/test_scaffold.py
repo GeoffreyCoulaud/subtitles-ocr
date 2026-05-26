@@ -550,7 +550,9 @@ def test_pipeline_config_export_defaults() -> None:
 
 def test_pipeline_config_frame_processing_defaults() -> None:
     cfg = PipelineConfig()
-    assert cfg.frame_processing.mask_dilation_iter == 1
+    # frame_processing is owned by OcrConfig (issue 1: OcrStage is the
+    # architectural owner of the diff/mask/compose pipe).
+    assert cfg.ocr.frame_processing.mask_dilation_iter == 1
 
 
 def test_pipeline_config_alignment_defaults() -> None:

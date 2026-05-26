@@ -10,7 +10,6 @@ import pytest
 from subtitles_ocr.config import FrameProcessingConfig, OcrConfig
 from subtitles_ocr.exceptions import OcrDeviceInitError
 from subtitles_ocr.io import JsonlWriter
-from subtitles_ocr.pipeline.alignment.stage import AlignmentResult, AlignmentSegment
 from subtitles_ocr.pipeline.frame_processing import ComposedFrame
 from subtitles_ocr.pipeline.ocr import FrameOcrResult, OcrDetection, OcrStage
 
@@ -30,29 +29,6 @@ class FakeOcrEngine:
         if not self._responses:
             return []
         return self._responses.pop(0)
-
-
-def _aligned_alignment(n: int) -> AlignmentResult:
-    return AlignmentResult(
-        fansub_total_frames=n,
-        raw_total_frames=n,
-        method_used="phash_only",
-        aligned_ratio=1.0,
-        orphan_ratio=0.0,
-        user_skipped_ratio=0.0,
-        segments=[
-            AlignmentSegment(
-                fansub_frame_start=0,
-                fansub_frame_end=n,
-                raw_frame_start=0,
-                raw_frame_end=n,
-                offset_frames=0,
-                status="ALIGNED",
-                confidence_avg=1.0,
-            )
-        ],
-        warnings=[],
-    )
 
 
 def _composed_frames(n: int) -> list[ComposedFrame]:
@@ -80,13 +56,10 @@ def test_ocr_stage_writes_one_jsonl_line_per_composed_frame(
     ]
     engine = FakeOcrEngine(responses=responses)
 
-    alignment = _aligned_alignment(5)
     stage = OcrStage(ocr_engine=engine)
     result = stage.run(
         mock_globals,
-        OcrConfig(),
-        alignment_result=alignment,
-        frame_processing_config=FrameProcessingConfig(),
+        OcrConfig(frame_processing=FrameProcessingConfig()),
         composed_frames=iter(composed),
     )
 
@@ -110,9 +83,7 @@ def test_ocr_stage_writes_sidecar_including_frame_processing_config(
     stage = OcrStage(ocr_engine=engine)
     stage.run(
         mock_globals,
-        OcrConfig(),
-        alignment_result=_aligned_alignment(2),
-        frame_processing_config=FrameProcessingConfig(mask_t_high=0.42),
+        OcrConfig(frame_processing=FrameProcessingConfig(mask_t_high=0.42)),
         composed_frames=iter(composed),
     )
     sidecar = tmp_workdir / "06_ocr" / "results.meta.json"
@@ -130,6 +101,38 @@ def test_ocr_stage_writes_sidecar_including_frame_processing_config(
     assert "parallelism" not in data["config"]["ocr"]
     # FrameProcessingConfig overrides reflected.
     assert data["config"]["frame_processing"]["mask_t_high"] == 0.42
+
+
+def test_ocr_stage_reads_alignment_json_from_workdir_when_composed_not_given(
+    tmp_workdir: Path, mock_globals
+) -> None:
+    """Issue 1: when composed_frames is not injected, OcrStage must load
+    ``02_alignment/alignment.json`` from the workdir (no orchestrator chaining).
+    Missing file → PipelineError.
+    """
+    from subtitles_ocr.exceptions import PipelineError
+
+    engine = FakeOcrEngine(responses=[])
+    stage = OcrStage(ocr_engine=engine)
+    # No alignment.json on disk and no composed_frames → must raise PipelineError
+    with pytest.raises(PipelineError):
+        stage.run(mock_globals, OcrConfig())
+
+
+def test_ocr_stage_raises_pipeline_error_on_invalid_alignment_json(
+    tmp_workdir: Path, mock_globals
+) -> None:
+    """Corrupted alignment.json on disk → PipelineError."""
+    from subtitles_ocr.exceptions import PipelineError
+
+    align_dir = tmp_workdir / "02_alignment"
+    align_dir.mkdir(parents=True, exist_ok=True)
+    (align_dir / "alignment.json").write_text("{not valid json")
+
+    engine = FakeOcrEngine(responses=[])
+    stage = OcrStage(ocr_engine=engine)
+    with pytest.raises(PipelineError):
+        stage.run(mock_globals, OcrConfig())
 
 
 # ---------------------------------------------------------------------------
@@ -155,9 +158,7 @@ def test_ocr_stage_resumes_after_partial_jsonl(tmp_workdir: Path, mock_globals) 
     stage = OcrStage(ocr_engine=engine)
     stage.run(
         mock_globals,
-        OcrConfig(),
-        alignment_result=_aligned_alignment(5),
-        frame_processing_config=FrameProcessingConfig(),
+        OcrConfig(frame_processing=FrameProcessingConfig()),
         composed_frames=iter(composed),
     )
 

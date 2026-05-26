@@ -95,6 +95,13 @@ class AlignmentConfig(BaseModel):
     thresh_match: int = 12  # baseline, à tuner
     # Failure policy (ADR-0002 §3 Stage 2)
     orphan_ratio_max: float = 0.30
+    # Per-source audio + user-skip wiring (ADR-0002 §3 Stage 2): owned by
+    # AlignmentConfig so that any change participates in the alignment
+    # sidecar cache-key and invalidates the cache correctly.
+    hardsub_audio_track: int | None = None
+    raw_audio_track: int | None = None
+    hardsub_skip_ranges: list[str] = Field(default_factory=list)
+    raw_skip_ranges: list[str] = Field(default_factory=list)
 
 
 class FrameProcessingConfig(BaseModel):
@@ -115,6 +122,11 @@ class OcrConfig(BaseModel):
     device: Annotated[Literal["auto", "cuda", "rocm", "cpu"], NoCacheKey] = "auto"
     parallelism: Annotated[int, NoCacheKey] = 1
     chunk_size: int = 500
+    # OcrStage is the architectural owner of the diff/mask/compose pipe
+    # (ADR-0002 §3 Stage 6); FrameProcessingConfig therefore lives here so the
+    # orchestrator can pass a single sub-config and still drive the full
+    # iter_composed_frames() inside `run()`.
+    frame_processing: FrameProcessingConfig = Field(default_factory=FrameProcessingConfig)
 
 
 class GroupConfig(BaseModel):
@@ -165,15 +177,14 @@ class ExportConfig(BaseModel):
 
 
 class PipelineConfig(BaseModel):
-    ar_strategy: Literal["error", "letterbox", "crop"] = "error"
-    hardsub_audio_track: int | None = None
-    raw_audio_track: int | None = None
-    hardsub_skip_ranges: list[str] = Field(default_factory=list)
-    raw_skip_ranges: list[str] = Field(default_factory=list)
-
+    # Root carries no scalar fields anymore: every CLI flag is routed into the
+    # sub-config that owns it (ADR-0002 §4, ADR-0004 §3.1). Specifically:
+    #   - ar_strategy           → ConformConfig
+    #   - hardsub/raw audio + skip ranges → AlignmentConfig (so they invalidate
+    #     the alignment cache when changed)
+    #   - frame_processing      → OcrConfig (OcrStage owns the compose pipe)
     conform: ConformConfig = Field(default_factory=ConformConfig)
     alignment: AlignmentConfig = Field(default_factory=AlignmentConfig)
-    frame_processing: FrameProcessingConfig = Field(default_factory=FrameProcessingConfig)
     ocr: OcrConfig = Field(default_factory=OcrConfig)
     group: GroupConfig = Field(default_factory=GroupConfig)
     animation: AnimationConfig = Field(default_factory=AnimationConfig)

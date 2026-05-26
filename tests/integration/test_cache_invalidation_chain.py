@@ -156,8 +156,9 @@ class StageRunner:
         composed = _composed_frames_for(g)
         OcrStage(ocr_engine=self.ocr_engine).run(
             g,
-            self.ocr_config,
-            frame_processing_config=self.frame_processing_config,
+            self.ocr_config.model_copy(
+                update={"frame_processing": self.frame_processing_config}
+            ),
             composed_frames=iter(composed),
         )
 
@@ -320,8 +321,9 @@ def test_changing_cache_invalidating_group_field_reexecutes_group_chain(
     ).run(g, AlignmentConfig())
     OcrStage(ocr_engine=runner.ocr_engine).run(
         g,
-        runner.ocr_config,
-        frame_processing_config=runner.frame_processing_config,
+        runner.ocr_config.model_copy(
+            update={"frame_processing": runner.frame_processing_config}
+        ),
         composed_frames=iter(_composed_frames_for(g)),
     )
     # Cache-invalidating field of Group flipped from default 0.2 → 0.3

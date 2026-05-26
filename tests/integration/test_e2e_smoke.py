@@ -91,8 +91,7 @@ def test_full_pipeline_produces_pysubs2_parsable_ass(
     # Stage 6 — composed frames injected directly
     OcrStage(ocr_engine=FakeOcrEngine()).run(
         g,
-        OcrConfig(),
-        frame_processing_config=FrameProcessingConfig(),
+        OcrConfig(frame_processing=FrameProcessingConfig()),
         composed_frames=iter(_composed_for(g)),
     )
 

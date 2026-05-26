@@ -134,20 +134,17 @@ class AlignmentStage:
         audio_loader: AudioLoader | None = None,
         frame_source: FrameSource | None = None,
         raw_total_frames: int = 0,
-        hardsub_audio_track: int | None = None,
-        raw_audio_track: int | None = None,
-        hardsub_skip_ranges: list[str] | None = None,
-        raw_skip_ranges: list[str] | None = None,
     ) -> None:
+        # External-dep injection points only (Protocols + raw_total_frames).
+        # Audio tracks and skip ranges are owned by AlignmentConfig (ADR-0004
+        # §3.1 / §5): they reach run() through `config`, never as constructor
+        # arguments — otherwise a user flag flip wouldn't invalidate the
+        # alignment sidecar cache.
         self.ffmpeg = ffmpeg
         self.vad = vad
         self.audio_loader = audio_loader
         self.frame_source = frame_source
         self.raw_total_frames = raw_total_frames
-        self.hardsub_audio_track = hardsub_audio_track
-        self.raw_audio_track = raw_audio_track
-        self.hardsub_skip_ranges = hardsub_skip_ranges or []
-        self.raw_skip_ranges = raw_skip_ranges or []
 
     # ------------------------------------------------------------------ cache
 
@@ -163,12 +160,12 @@ class AlignmentStage:
             "hardsub_path": str(globals_.hardsub_path),
             "raw_path": str(globals_.raw_path),
         }
+        # `raw_total_frames` is a runtime quantity not on AlignmentConfig; keep
+        # it here so a different raw video invalidates the cache. The audio
+        # tracks and skip ranges are part of `config` itself (issue 4) so
+        # `cache_invalidating_dict(config)` already covers them.
         runtime_subset = {
             "raw_total_frames": self.raw_total_frames,
-            "hardsub_audio_track": self.hardsub_audio_track,
-            "raw_audio_track": self.raw_audio_track,
-            "hardsub_skip_ranges": list(self.hardsub_skip_ranges),
-            "raw_skip_ranges": list(self.raw_skip_ranges),
         }
         return BaseMeta(
             stage_name=STAGE_NAME,
@@ -213,15 +210,17 @@ class AlignmentStage:
         # ---- 1. parse user skip ranges ------------------------------------
         fps_num = globals.fps.numerator
         fps_den = globals.fps.denominator
-        hardsub_skip_intervals = _parse_skip_ranges(self.hardsub_skip_ranges, fps_num, fps_den)
+        hardsub_skip_intervals = _parse_skip_ranges(
+            list(config.hardsub_skip_ranges), fps_num, fps_den
+        )
 
         # ---- 2. decide branch ---------------------------------------------
         method: Literal["audio+phash_refinement", "phash_only"] = "phash_only"
         audio_offset: int | None = None
 
         audio_available = (
-            self.hardsub_audio_track is not None
-            and self.raw_audio_track is not None
+            config.hardsub_audio_track is not None
+            and config.raw_audio_track is not None
             and self.ffmpeg is not None
             and self.vad is not None
             and self.audio_loader is not None
@@ -331,16 +330,16 @@ class AlignmentStage:
         assert self.ffmpeg is not None
         assert self.vad is not None
         assert self.audio_loader is not None
-        assert self.hardsub_audio_track is not None
-        assert self.raw_audio_track is not None
+        assert config.hardsub_audio_track is not None
+        assert config.raw_audio_track is not None
 
         align_dir = globals.workdir / "02_alignment"
         align_dir.mkdir(parents=True, exist_ok=True)
         hardsub_wav = align_dir / "hardsub_audio.wav"
         raw_wav = align_dir / "raw_audio.wav"
 
-        self.ffmpeg.extract_audio(globals.hardsub_path, self.hardsub_audio_track, hardsub_wav)
-        self.ffmpeg.extract_audio(globals.raw_path, self.raw_audio_track, raw_wav)
+        self.ffmpeg.extract_audio(globals.hardsub_path, config.hardsub_audio_track, hardsub_wav)
+        self.ffmpeg.extract_audio(globals.raw_path, config.raw_audio_track, raw_wav)
 
         samples_fan, sr_fan = self.audio_loader.load(hardsub_wav)
         samples_raw, sr_raw = self.audio_loader.load(raw_wav)
