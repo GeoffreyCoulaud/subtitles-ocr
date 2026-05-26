@@ -140,6 +140,21 @@ uv run subtitles-ocr \
   --workdir /path/to/work
 ```
 
+## Evaluating output quality
+
+Once the pipeline has produced an `.ass`, you can score it against a known-good reference `.ass` (e.g. a human-made fansub for the same source video):
+
+```bash
+uv run subtitles-ocr-evaluate \
+  --output workdir/12_export/output.ass \
+  --reference path/to/reference.ass \
+  --fps 24000/1001
+```
+
+The score is a 0-1 weighted sum of nine independent sub-scores: `text_plain`, `text_exact`, `timing`, `recall`, `precision`, `line_breaks`, `styling`, `position`, `fade`. Each is reported alongside its effective weight. See [ADR-0006](docs/ADR-0006-Subtitle-Output-Scoring.md) for the full specification.
+
+Pass `--json` for a machine-readable `ScoreReport`. Pass `--weights weights.json` to override the default integer weights (a JSON object matching the `Weights` Pydantic model).
+
 ## Documentation
 
 - [Install, test, and run commands](docs/development.md)
@@ -149,3 +164,4 @@ uv run subtitles-ocr \
 - [ADR-0003 — animation reconstruction scope](docs/ADR-0003-Animation-Reconstruction.md)
 - [ADR-0004 — shared infrastructure](docs/ADR-0004-Shared-Infrastructure.md)
 - [ADR-0005 — normalize stage refactor (supersedes ADR-0002 §3 Stage 10)](docs/ADR-0005-Normalize-Stage-Refactor.md)
+- [ADR-0006 — subtitle output scoring](docs/ADR-0006-Subtitle-Output-Scoring.md)
