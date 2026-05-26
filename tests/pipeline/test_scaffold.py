@@ -382,13 +382,14 @@ def test_color_extraction_result_round_trip() -> None:
     assert restored.events[0].style_supported is False
 
 
-def test_color_stage_run_raises_not_implemented(mock_globals) -> None:
+def test_color_stage_has_config_field() -> None:
+    # ColorStage is implemented; scaffold-level NotImplementedError check has
+    # been replaced by the dedicated tests/pipeline/test_color.py suite.
     from subtitles_ocr.pipeline.color import ColorStage
 
     stage = ColorStage()
     assert stage.CONFIG_FIELD == "color"
-    with pytest.raises(NotImplementedError):
-        stage.run(mock_globals, ColorConfig())
+    assert isinstance(stage.GLOBALS_USED, tuple)
 
 
 # -------------------- event_cleanup --------------------
