@@ -15,7 +15,7 @@ from pysubs2 import Alignment, Color, SSAEvent, SSAFile, SSAStyle
 from subtitles_ocr.config import ExportConfig, PipelineGlobals
 from subtitles_ocr.pipeline.animation import AnimatedEvent, AnimationAnalysisResult
 from subtitles_ocr.pipeline.color import ColorExtractionResult, EventColors
-from subtitles_ocr.pipeline.doc_cleanup import DocCleanupResult, FinalEvent
+from subtitles_ocr.pipeline.normalize import NormalizeResult
 from subtitles_ocr.timing import frame_to_ms
 
 STAGE_VERSION: int = 1
@@ -117,9 +117,9 @@ def _load_colors(workdir: Path) -> ColorExtractionResult:
     return ColorExtractionResult.model_validate_json(raw)
 
 
-def _load_doc(workdir: Path) -> DocCleanupResult:
-    raw = (workdir / "11_doc_cleanup" / "cleaned_final.json").read_text(encoding="utf-8")
-    return DocCleanupResult.model_validate_json(raw)
+def _load_doc(workdir: Path) -> NormalizeResult:
+    raw = (workdir / "11_normalize" / "normalized.json").read_text(encoding="utf-8")
+    return NormalizeResult.model_validate_json(raw)
 
 
 # ---------------------------------------------------------------------------

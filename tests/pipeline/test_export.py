@@ -11,7 +11,7 @@ import pytest
 from subtitles_ocr.config import ExportConfig, PipelineGlobals
 from subtitles_ocr.pipeline.animation import AnimatedEvent, AnimationAnalysisResult
 from subtitles_ocr.pipeline.color import ColorExtractionResult, EventColors
-from subtitles_ocr.pipeline.doc_cleanup import DocCleanupResult, FinalEvent
+from subtitles_ocr.pipeline.normalize import NormalizedEvent, NormalizeResult
 from subtitles_ocr.pipeline.export import ExportStage
 
 
@@ -45,18 +45,18 @@ def _write_inputs(
     workdir: Path,
     animation: AnimationAnalysisResult,
     colors: ColorExtractionResult,
-    doc: DocCleanupResult,
+    doc: NormalizeResult,
 ) -> None:
     (workdir / "08_animation").mkdir(parents=True, exist_ok=True)
     (workdir / "09_color").mkdir(parents=True, exist_ok=True)
-    (workdir / "11_doc_cleanup").mkdir(parents=True, exist_ok=True)
+    (workdir / "11_normalize").mkdir(parents=True, exist_ok=True)
     (workdir / "08_animation" / "animation.json").write_text(
         animation.model_dump_json(), encoding="utf-8"
     )
     (workdir / "09_color" / "colors.json").write_text(
         colors.model_dump_json(), encoding="utf-8"
     )
-    (workdir / "11_doc_cleanup" / "cleaned_final.json").write_text(
+    (workdir / "11_normalize" / "normalized.json").write_text(
         doc.model_dump_json(), encoding="utf-8"
     )
 
@@ -102,9 +102,9 @@ def _make_colors(
     return ColorExtractionResult(events=events, stats={})
 
 
-def _make_doc(*items: tuple[int, str]) -> DocCleanupResult:
-    return DocCleanupResult(
-        events=[FinalEvent(event_id=eid, cleaned_text=text) for (eid, text) in items]
+def _make_doc(*items: tuple[int, str]) -> NormalizeResult:
+    return NormalizeResult(
+        events=[NormalizedEvent(event_id=eid, cleaned_text=text) for (eid, text) in items]
     )
 
 
