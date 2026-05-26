@@ -557,7 +557,7 @@ def test_pipeline_config_frame_processing_defaults() -> None:
 
 def test_pipeline_config_alignment_defaults() -> None:
     cfg = PipelineConfig()
-    assert cfg.alignment.thresh_agree == 10
+    assert cfg.alignment.thresh_agree == 12
     assert cfg.alignment.threshold_disagree == 0.30
     assert cfg.alignment.orphan_ratio_max == 0.30
 

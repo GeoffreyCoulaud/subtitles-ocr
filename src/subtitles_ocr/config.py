@@ -83,9 +83,15 @@ class AlignmentConfig(BaseModel):
     audio_thresh_snr: float = 3.0  # baseline, à tuner
     min_match_s: float = 1.0  # baseline, à tuner
     offset_tolerance_frames: int = 2  # baseline, à tuner
-    # Sub-stage 2b — phash refinement (defaults from ADR-0002 §9)
-    thresh_agree: int = 10
+    # Sub-stage 2b — phash refinement (defaults from ADR-0002 §9, thresh_agree
+    # raised from 10 to 12 bits to tolerate burned-subtitle vs clean phash drift
+    # on real footage).
+    thresh_agree: int = 12
     threshold_disagree: float = 0.30
+    # When True (default), a confident audio sub-stage 2a result is used
+    # directly without phash refinement. Set False to restore the strict
+    # audio+phash gating from ADR-0002.
+    trust_audio_directly: bool = True
     # Sub-stage 2c — phash fallback (per ADR-0001 §17)
     w_initial: int = 4  # baseline, à tuner
     w_min: int = 2  # baseline, à tuner

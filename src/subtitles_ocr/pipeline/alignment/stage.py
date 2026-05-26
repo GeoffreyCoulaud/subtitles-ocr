@@ -50,7 +50,7 @@ class AlignmentSegment(BaseModel):
 class AlignmentResult(BaseModel):
     fansub_total_frames: int
     raw_total_frames: int
-    method_used: Literal["audio+phash_refinement", "phash_only"]
+    method_used: Literal["audio_only", "audio+phash_refinement", "phash_only"]
     aligned_ratio: float
     orphan_ratio: float
     user_skipped_ratio: float
@@ -215,7 +215,7 @@ class AlignmentStage:
         )
 
         # ---- 2. decide branch ---------------------------------------------
-        method: Literal["audio+phash_refinement", "phash_only"] = "phash_only"
+        method: Literal["audio_only", "audio+phash_refinement", "phash_only"] = "phash_only"
         audio_offset: int | None = None
 
         audio_available = (
@@ -229,15 +229,34 @@ class AlignmentStage:
         if audio_available:
             try:
                 audio_offset = self._run_audio_stage_2a(globals, config)
-                method = "audio+phash_refinement"
+                method = "audio_only" if config.trust_audio_directly else "audio+phash_refinement"
             except Exception as exc:
-                warnings.append(f"audio sub-stage failed; falling back to phash-only: {exc}")
+                msg = f"audio sub-stage failed; falling back to phash-only: {exc}"
+                logger.warning(msg)
+                warnings.append(msg)
                 method = "phash_only"
 
         # ---- 3. build alignment per frame ---------------------------------
         fansub_total = globals.fansub_total_frames
         # Frames not user-skipped
         active_frames = [i for i in range(fansub_total) if not _frame_is_skipped(i, hardsub_skip_intervals)]
+
+        if method == "audio_only":
+            # Trust the audio offset directly; no phash refinement. Burned
+            # subtitles routinely break the phash-agreement check on real
+            # footage, so the refinement gate is opt-in.
+            offset = audio_offset or 0
+            matches = []
+            for fan_idx in active_frames:
+                raw_idx = fan_idx + offset
+                if 0 <= raw_idx < self.raw_total_frames:
+                    matches.append(
+                        PhashMatch(fansub_frame_idx=fan_idx, raw_frame_idx=raw_idx, distance=None)
+                    )
+                else:
+                    matches.append(
+                        PhashMatch(fansub_frame_idx=fan_idx, raw_frame_idx=None, distance=None)
+                    )
 
         if method == "audio+phash_refinement":
             # Sub-stage 2b: phash refinement around audio offset
@@ -249,10 +268,12 @@ class AlignmentStage:
                 thresh_agree=config.thresh_agree,
             )
             if refinement.disagreement_ratio > config.threshold_disagree:
-                warnings.append(
+                msg = (
                     f"phash refinement disagreement {refinement.disagreement_ratio:.0%} "
                     f"exceeds threshold; falling back to phash-only (2c)"
                 )
+                logger.warning(msg)
+                warnings.append(msg)
                 method = "phash_only"
             else:
                 matches = self._refinement_to_matches(active_frames, refinement)

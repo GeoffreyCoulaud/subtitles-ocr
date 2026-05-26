@@ -508,6 +508,53 @@ def test_run_resume_skips_recomputation(tmp_workdir: Path) -> None:
     assert result.model_dump() == first.model_dump()
 
 
+class _ExplodingPhaser:
+    """FrameSource that raises if called — to assert phash is never invoked."""
+
+    def get_phash(self, source: str, frame_idx: int) -> int:  # pragma: no cover - guard
+        raise AssertionError(f"get_phash should not be called (source={source} idx={frame_idx})")
+
+
+def test_run_trust_audio_directly_skips_phash_refinement(tmp_workdir: Path) -> None:
+    """When audio is confident and `trust_audio_directly=True` (default), the
+    stage builds matches from the audio offset directly without invoking
+    `get_phash` for sub-stage 2b refinement."""
+    globals_ = make_globals(tmp_workdir, fansub_total=20)
+
+    rng = np.random.default_rng(1)
+    base = rng.normal(size=2000).astype(np.float32)
+    fansub_probs = base.copy()
+    raw_probs = base.copy()
+
+    hardsub_wav = tmp_workdir / "02_alignment" / "hardsub_audio.wav"
+    raw_wav = tmp_workdir / "02_alignment" / "raw_audio.wav"
+    samples_a = np.zeros(16000, dtype=np.float32)
+    samples_b = np.ones(16000, dtype=np.float32) * 0.5
+    loader = FakeAudioLoader(
+        samples_by_path={hardsub_wav: (samples_a, 16000), raw_wav: (samples_b, 16000)}
+    )
+    vad = FakeVadModel(
+        probs_by_key={
+            f"{samples_a.shape}-{float(samples_a.sum()):.6f}": fansub_probs,
+            f"{samples_b.shape}-{float(samples_b.sum()):.6f}": raw_probs,
+        }
+    )
+
+    stage = AlignmentStage(
+        ffmpeg=FakeFfmpegRunner(),
+        vad=vad,
+        audio_loader=loader,
+        frame_source=_ExplodingPhaser(),
+        raw_total_frames=30,
+    )
+    result = stage.run(
+        globals_,
+        AlignmentConfig(hardsub_audio_track=0, raw_audio_track=1),
+    )
+    assert result.method_used == "audio_only"
+    assert result.aligned_ratio > 0.9
+
+
 def test_run_audio_branch_aligns_via_xcorr(tmp_workdir: Path) -> None:
     """End-to-end audio path: real cross-corr on synthetic VAD probs."""
     globals_ = make_globals(tmp_workdir, fansub_total=20)
@@ -537,7 +584,10 @@ def test_run_audio_branch_aligns_via_xcorr(tmp_workdir: Path) -> None:
     phasher = _identity_phasher_for_offset(0, 30)
     fs = FakeFrameSource(phasher)
 
-    cfg = AlignmentConfig(hardsub_audio_track=0, raw_audio_track=1)
+    # trust_audio_directly=False exercises the phash-refinement gate (2b).
+    cfg = AlignmentConfig(
+        hardsub_audio_track=0, raw_audio_track=1, trust_audio_directly=False
+    )
     stage = AlignmentStage(
         ffmpeg=ffmpeg,
         vad=vad,
@@ -551,7 +601,9 @@ def test_run_audio_branch_aligns_via_xcorr(tmp_workdir: Path) -> None:
     assert result.aligned_ratio > 0.9
 
 
-def test_run_audio_extract_failure_falls_back_to_phash(tmp_workdir: Path) -> None:
+def test_run_audio_extract_failure_falls_back_to_phash(
+    tmp_workdir: Path, caplog
+) -> None:
     globals_ = make_globals(tmp_workdir, fansub_total=10)
     ffmpeg = FakeFfmpegRunner(fail_on_track=1)
     fs = FakeFrameSource(_identity_phasher_for_offset(0, 15))
@@ -563,16 +615,18 @@ def test_run_audio_extract_failure_falls_back_to_phash(tmp_workdir: Path) -> Non
         frame_source=fs,
         raw_total_frames=15,
     )
-    result = stage.run(
-        globals_,
-        AlignmentConfig(hardsub_audio_track=0, raw_audio_track=1),
-    )
+    with caplog.at_level("WARNING", logger="subtitles_ocr.pipeline.alignment.stage"):
+        result = stage.run(
+            globals_,
+            AlignmentConfig(hardsub_audio_track=0, raw_audio_track=1),
+        )
     assert result.method_used == "phash_only"
-    # Warning about audio fallback
+    # Warning recorded in result.warnings AND emitted through `logger.warning`.
     assert any("audio" in w.lower() for w in result.warnings)
+    assert any("audio" in r.message.lower() for r in caplog.records)
 
 
-def test_run_phash_refinement_disagreement_triggers_fallback(tmp_workdir: Path) -> None:
+def test_run_phash_refinement_disagreement_triggers_fallback(tmp_workdir: Path, caplog) -> None:
     """2b disagreement > threshold → fallback to 2c with a warning."""
     globals_ = make_globals(tmp_workdir, fansub_total=20)
 
@@ -608,15 +662,21 @@ def test_run_phash_refinement_disagreement_triggers_fallback(tmp_workdir: Path) 
         frame_source=fs,
         raw_total_frames=30,
     )
-    result = stage.run(
-        globals_,
-        AlignmentConfig(
-            threshold_disagree=0.30,
-            orphan_ratio_max=1.0,
-            hardsub_audio_track=0,
-            raw_audio_track=1,
-        ),
-    )
+    with caplog.at_level("WARNING", logger="subtitles_ocr.pipeline.alignment.stage"):
+        result = stage.run(
+            globals_,
+            AlignmentConfig(
+                threshold_disagree=0.30,
+                orphan_ratio_max=1.0,
+                hardsub_audio_track=0,
+                raw_audio_track=1,
+                trust_audio_directly=False,
+            ),
+        )
     # Falls back to phash_only when refinement disagrees badly
     assert result.method_used == "phash_only"
     assert any("disagree" in w.lower() or "fallback" in w.lower() for w in result.warnings)
+    assert any(
+        "disagree" in r.message.lower() or "fallback" in r.message.lower()
+        for r in caplog.records
+    )
