@@ -461,13 +461,15 @@ def test_doc_cleanup_result_round_trip() -> None:
     assert len(restored.events) == 1
 
 
-def test_doc_cleanup_stage_run_raises_not_implemented(mock_globals) -> None:
+def test_doc_cleanup_stage_construction() -> None:
+    # Scaffold sentinel retired: DocCleanupStage is implemented and covered by
+    # tests/pipeline/test_doc_cleanup.py. We keep a lightweight construction
+    # check here to preserve the scaffold's "every stage's CONFIG_FIELD is
+    # wired" invariant.
     from subtitles_ocr.pipeline.doc_cleanup import DocCleanupStage
 
     stage = DocCleanupStage(llm=object())
     assert stage.CONFIG_FIELD == "doc_cleanup"
-    with pytest.raises(NotImplementedError):
-        stage.run(mock_globals, DocCleanupConfig())
 
 
 # -------------------- export --------------------
