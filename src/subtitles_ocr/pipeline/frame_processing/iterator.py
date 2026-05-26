@@ -38,28 +38,54 @@ class FrameReader(Protocol):
 
 
 class _OpenCvFrameReader:
-    """Cached sequential reader. Re-opens on backward seeks to stay simple."""
+    """Default frame reader, backed by PyAV (libavcodec) for broad codec
+    support (AV1, HEVC, …) that opencv's bundled ffmpeg may lack. Cached per
+    path with a sequential fast path and re-seek on jumps. The class keeps
+    its historical name for API stability with existing imports."""
 
     def __init__(self) -> None:
-        self._caps: dict[Path, tuple[object, int]] = {}
+        # path -> (av container, video stream, frame iterator, next_idx)
+        self._state: dict[Path, dict] = {}
 
-    def _get(self, path: Path) -> tuple[object, int]:
-        if path not in self._caps:
-            cap = cv2.VideoCapture(str(path))
-            if not cap.isOpened():
-                raise RuntimeError(f"OpenCV failed to open video: {path}")
-            self._caps[path] = (cap, -1)
-        return self._caps[path]
+    def _open(self, path: Path) -> dict:
+        import av
+
+        container = av.open(str(path))
+        stream = container.streams.video[0]
+        stream.thread_type = "AUTO"
+        state = {
+            "container": container,
+            "stream": stream,
+            "iter": container.decode(stream),
+            "next_idx": 0,
+        }
+        self._state[path] = state
+        return state
+
+    def _seek(self, path: Path, frame_idx: int) -> None:
+        state = self._state[path]
+        stream = state["stream"]
+        target_pts = int(frame_idx / stream.average_rate / stream.time_base)
+        state["container"].seek(target_pts, any_frame=False, backward=True, stream=stream)
+        state["iter"] = state["container"].decode(stream)
+        state["next_idx"] = -1
 
     def read(self, path: Path, frame_idx: int) -> np.ndarray:
-        cap, last_idx = self._get(path)
-        if frame_idx != last_idx + 1:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)  # type: ignore[attr-defined]
-        ok, bgr = cap.read()  # type: ignore[attr-defined]
-        if not ok or bgr is None:
-            raise RuntimeError(f"OpenCV failed to read frame {frame_idx} from {path}")
-        self._caps[path] = (cap, frame_idx)
-        return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        if path not in self._state:
+            self._open(path)
+        state = self._state[path]
+        if frame_idx < state["next_idx"] or frame_idx > state["next_idx"] + 256:
+            self._seek(path, frame_idx)
+        stream = state["stream"]
+        target_pts = int(frame_idx / stream.average_rate / stream.time_base)
+        for frame in state["iter"]:
+            if frame.pts is None:
+                continue
+            if frame.pts < target_pts:
+                continue
+            state["next_idx"] = frame_idx + 1
+            return frame.to_ndarray(format="rgb24")
+        raise RuntimeError(f"PyAV reached EOF before frame {frame_idx} in {path}")
 
 
 def _write_debug_image(path: Path, image: np.ndarray) -> None:
@@ -86,6 +112,11 @@ def iter_composed_frames(
     reader = frame_reader if frame_reader is not None else _OpenCvFrameReader()
     debug = globals.debug_images
     workdir = globals.workdir
+    # ConformStage writes the AR/codec-normalized raw to `01_conform/raw.mkv`;
+    # diff/mask require fansub and raw at the same resolution, so we must read
+    # the conformed copy, not `globals.raw_path` (which still points at the
+    # source bluray).
+    conformed_raw_path = workdir / "01_conform" / "raw.mkv"
     for seg in alignment_result.segments:
         if seg.status != "ALIGNED":
             continue
@@ -96,7 +127,7 @@ def iter_composed_frames(
                 continue
             raw_idx = fansub_idx + seg.offset_frames
             fansub_img = reader.read(globals.hardsub_path, fansub_idx)
-            raw_img = reader.read(globals.raw_path, raw_idx)
+            raw_img = reader.read(conformed_raw_path, raw_idx)
             diff = compute_diff(fansub_img, raw_img, config)
             mask = make_mask(diff, config)
             composed = compose(fansub_img, mask)

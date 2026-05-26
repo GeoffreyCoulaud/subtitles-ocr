@@ -161,6 +161,41 @@ def test_compose_pixels_in_mask_keep_fansub_pixels_outside_mask_black() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_default_frame_reader_can_decode_a_real_mp4(tmp_path: Path) -> None:
+    """The default reader must decode codecs that opencv's bundled ffmpeg
+    sometimes lacks (AV1, certain H.264 profiles). We generate a synthetic
+    mp4 via PyAV and verify the reader returns a frame whose pixel matches
+    the colour we encoded."""
+    import av
+
+    path = tmp_path / "synth.mp4"
+    container = av.open(str(path), mode="w")
+    try:
+        stream = container.add_stream("mpeg4", rate=10)
+        stream.width = 16
+        stream.height = 16
+        stream.pix_fmt = "yuv420p"
+        for i in range(5):
+            arr = np.full((16, 16, 3), i * 40, dtype=np.uint8)
+            frame = av.VideoFrame.from_ndarray(arr, format="rgb24")
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
+    finally:
+        container.close()
+
+    from subtitles_ocr.pipeline.frame_processing.iterator import _OpenCvFrameReader
+
+    reader = _OpenCvFrameReader()
+    frame = reader.read(path, 2)
+    assert frame.shape == (16, 16, 3)
+    assert frame.dtype == np.uint8
+    # rgb pixel should be near (80, 80, 80) — allow generous tolerance for codec losses
+    mean = float(frame.mean())
+    assert 60.0 <= mean <= 100.0, f"unexpected mean intensity {mean}"
+
+
 class _FakeFrameReader:
     """In-memory frame reader matching the FrameReader Protocol used by the iterator."""
 
@@ -171,9 +206,63 @@ class _FakeFrameReader:
         return self._frames[path][frame_idx]
 
 
+class _RecordingFrameReader:
+    """Frame reader that records every (path, frame_idx) call."""
+
+    def __init__(self, frames_by_path: dict[Path, list[np.ndarray]]) -> None:
+        self._frames = frames_by_path
+        self.calls: list[tuple[Path, int]] = []
+
+    def read(self, path: Path, frame_idx: int) -> np.ndarray:
+        self.calls.append((path, frame_idx))
+        return self._frames[path][frame_idx]
+
+
+def test_iter_composed_frames_reads_raw_from_conformed_workdir(mock_globals) -> None:
+    """The iterator must read raw frames from the conformed mkv in the workdir
+    (`01_conform/raw.mkv`), not from `globals.raw_path` which still points at
+    the original bluray (potentially different resolution / codec)."""
+    n_frames = 3
+    conformed_raw_path = mock_globals.workdir / "01_conform" / "raw.mkv"
+    rng = np.random.default_rng(0)
+    fansub_frames = [rng.integers(0, 256, (16, 16, 3), dtype=np.uint8) for _ in range(n_frames)]
+    raw_frames = [rng.integers(0, 256, (16, 16, 3), dtype=np.uint8) for _ in range(n_frames)]
+    reader = _RecordingFrameReader(
+        {mock_globals.hardsub_path: fansub_frames, conformed_raw_path: raw_frames}
+    )
+
+    alignment = AlignmentResult(
+        fansub_total_frames=n_frames,
+        raw_total_frames=n_frames,
+        method_used="audio_only",
+        aligned_ratio=1.0,
+        orphan_ratio=0.0,
+        user_skipped_ratio=0.0,
+        segments=[
+            AlignmentSegment(
+                fansub_frame_start=0,
+                fansub_frame_end=n_frames,
+                raw_frame_start=0,
+                raw_frame_end=n_frames,
+                offset_frames=0,
+                status="ALIGNED",
+                confidence_avg=None,
+            )
+        ],
+        warnings=[],
+    )
+
+    list(iter_composed_frames(mock_globals, alignment, FrameProcessingConfig(), frame_reader=reader))
+
+    raw_call_paths = {p for p, _ in reader.calls if p != mock_globals.hardsub_path}
+    assert raw_call_paths == {conformed_raw_path}, (
+        f"raw frames must be read from {conformed_raw_path}, got {raw_call_paths}"
+    )
+
+
 def test_iter_composed_frames_yields_one_per_aligned_fansub_frame(mock_globals) -> None:
     n_frames = 5
-    raw_path = mock_globals.raw_path
+    raw_path = mock_globals.workdir / "01_conform" / "raw.mkv"
     hardsub_path = mock_globals.hardsub_path
     rng = np.random.default_rng(42)
     fansub_frames = [rng.integers(0, 256, (32, 32, 3), dtype=np.uint8) for _ in range(n_frames)]
@@ -219,7 +308,7 @@ def test_iter_composed_frames_yields_one_per_aligned_fansub_frame(mock_globals) 
 
 def test_iter_composed_frames_skips_orphan_segments(mock_globals) -> None:
     n_frames = 6
-    raw_path = mock_globals.raw_path
+    raw_path = mock_globals.workdir / "01_conform" / "raw.mkv"
     hardsub_path = mock_globals.hardsub_path
     rng = np.random.default_rng(1)
     fansub_frames = [rng.integers(0, 256, (16, 16, 3), dtype=np.uint8) for _ in range(n_frames)]
@@ -279,7 +368,7 @@ def test_iter_composed_frames_skips_orphan_segments(mock_globals) -> None:
 
 def test_iter_composed_frames_respects_start_at_fansub_idx(mock_globals) -> None:
     n_frames = 4
-    raw_path = mock_globals.raw_path
+    raw_path = mock_globals.workdir / "01_conform" / "raw.mkv"
     hardsub_path = mock_globals.hardsub_path
     fansub_frames = [np.full((8, 8, 3), i, dtype=np.uint8) for i in range(n_frames)]
     raw_frames = [np.full((8, 8, 3), i, dtype=np.uint8) for i in range(n_frames)]
@@ -329,6 +418,7 @@ def test_iter_composed_frames_debug_images_writes_pngs(tmp_path: Path) -> None:
 
     hardsub_path = tmp_path / "fake_hardsub.avi"
     raw_path = tmp_path / "fake_raw.mkv"
+    conformed_raw_path = tmp_path / "01_conform" / "raw.mkv"
     globals_ = PipelineGlobals(
         workdir=tmp_path,
         hardsub_path=hardsub_path,
@@ -343,7 +433,7 @@ def test_iter_composed_frames_debug_images_writes_pngs(tmp_path: Path) -> None:
     rng = np.random.default_rng(7)
     fansub_frames = [rng.integers(0, 256, (32, 32, 3), dtype=np.uint8) for _ in range(2)]
     raw_frames = [rng.integers(0, 256, (32, 32, 3), dtype=np.uint8) for _ in range(2)]
-    reader = _FakeFrameReader({hardsub_path: fansub_frames, raw_path: raw_frames})
+    reader = _FakeFrameReader({hardsub_path: fansub_frames, conformed_raw_path: raw_frames})
 
     alignment = AlignmentResult(
         fansub_total_frames=2,
