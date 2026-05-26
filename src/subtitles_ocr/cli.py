@@ -168,7 +168,7 @@ def setup_logging(stdout_level: int, log_file: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def build_stages(config: PipelineConfig) -> list:
+def build_stages(config: PipelineConfig, globals: PipelineGlobals | None = None) -> list:
     """Return the 9 MVP stages in pipeline order (ADR-0002 §2).
 
     Per ADR-0004 §3.1 / §3.3 every stage exposes the strict ``run(globals,
@@ -177,6 +177,7 @@ def build_stages(config: PipelineConfig) -> list:
     consumer (e.g. OcrStage loads ``02_alignment/alignment.json`` itself,
     GroupStage loads ``06_ocr/results.jsonl``, …).
     """
+    from subtitles_ocr.pipeline.alignment.opencv_phash import OpenCvPhashFrameSource
     from subtitles_ocr.pipeline.alignment.stage import AlignmentStage
     from subtitles_ocr.pipeline.animation import AnimationStage
     from subtitles_ocr.pipeline.color import ColorStage
@@ -187,15 +188,44 @@ def build_stages(config: PipelineConfig) -> list:
     from subtitles_ocr.pipeline.group import GroupStage
     from subtitles_ocr.pipeline.ocr import OcrStage
 
+    if globals is not None:
+        from subtitles_ocr.ffmpeg.subprocess_runner import SubprocessFfmpegRunner
+        from subtitles_ocr.pipeline.alignment.silero import SileroVadModel, WavAudioLoader
+
+        frame_source = OpenCvPhashFrameSource(
+            fansub_path=globals.hardsub_path,
+            raw_path=globals.workdir / "01_conform" / "raw.mkv",
+        )
+        ffmpeg_runner = SubprocessFfmpegRunner()
+        raw_meta = ffmpeg_runner.probe(globals.raw_path)
+        align_kwargs = {
+            "ffmpeg": ffmpeg_runner,
+            "frame_source": frame_source,
+            "raw_total_frames": raw_meta.total_frames,
+        }
+        if (
+            config.alignment.hardsub_audio_track is not None
+            and config.alignment.raw_audio_track is not None
+        ):
+            align_kwargs["vad"] = SileroVadModel()
+            align_kwargs["audio_loader"] = WavAudioLoader()
+        alignment = AlignmentStage(**align_kwargs)
+    else:
+        alignment = AlignmentStage()
+    from subtitles_ocr.llm.ollama import OllamaLlmClient
+    from subtitles_ocr.pipeline.frame_processing.iterator import _OpenCvFrameReader
+
     return [
         ConformStage(),
-        AlignmentStage(),
+        alignment,
         OcrStage(),
         GroupStage(),
         AnimationStage(),
-        ColorStage(),
+        ColorStage(frame_reader=_OpenCvFrameReader()),
         EventCleanupStage(),
-        DocCleanupStage(),
+        # doc_cleanup sends the whole event list in one prompt; allow more time
+        # than the default 60s, especially for CPU-only or small models.
+        DocCleanupStage(llm=OllamaLlmClient(request_timeout_seconds=300.0)),
         ExportStage(),
     ]
 
@@ -205,7 +235,7 @@ def run_pipeline(
     config: PipelineConfig,
     stages: list | None = None,
 ) -> None:
-    actual_stages = stages if stages is not None else build_stages(config)
+    actual_stages = stages if stages is not None else build_stages(config, globals)
     for stage in actual_stages:
         stage_config = section_for(config, stage)
         stage.run(globals, stage_config)
