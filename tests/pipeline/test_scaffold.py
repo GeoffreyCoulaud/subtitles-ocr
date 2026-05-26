@@ -263,13 +263,14 @@ def test_group_result_round_trip() -> None:
     assert len(restored.events) == 1
 
 
-def test_group_stage_run_raises_not_implemented(mock_globals) -> None:
+def test_group_stage_metadata() -> None:
+    # Scaffold test originally asserted NotImplementedError on run(); GroupStage
+    # is now implemented (P3.4), so we keep the stage-class smoke check only.
     from subtitles_ocr.pipeline.group import GroupStage
 
     stage = GroupStage()
     assert stage.CONFIG_FIELD == "group"
-    with pytest.raises(NotImplementedError):
-        stage.run(mock_globals, GroupConfig())
+    assert isinstance(stage.GLOBALS_USED, tuple)
 
 
 # -------------------- animation --------------------
