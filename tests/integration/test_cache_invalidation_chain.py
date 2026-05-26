@@ -12,7 +12,7 @@ suite verifies the *observable* invariants across the 9-stage chain:
     which through Group's intermediate fingerprint cascades downstream
 
 Stages that fingerprint upstream intermediates: Conform(sources), Group(ocr,
-alignment), Animation(group), Color(animation), DocCleanup(event_cleanup).
+alignment), Animation(group), Color(animation), Normalize(event_cleanup).
 Stages that DO NOT fingerprint upstream: Alignment, OCR, EventCleanup. That
 asymmetry is intrinsic to the current design and the assertions below reflect
 it honestly.
@@ -27,11 +27,11 @@ from subtitles_ocr.config import (
     AnimationConfig,
     ColorConfig,
     ConformConfig,
-    DocCleanupConfig,
     EventCleanupConfig,
     ExportConfig,
     FrameProcessingConfig,
     GroupConfig,
+    NormalizeConfig,
     OcrConfig,
     PipelineGlobals,
 )
@@ -39,15 +39,11 @@ from subtitles_ocr.pipeline.alignment.stage import AlignmentConfig, AlignmentSta
 from subtitles_ocr.pipeline.animation import AnimationStage
 from subtitles_ocr.pipeline.color import ColorStage
 from subtitles_ocr.pipeline.conform import ConformStage
-from subtitles_ocr.pipeline.doc_cleanup import (
-    DocCleanupResult,
-    DocCleanupStage,
-    FinalEvent,
-)
 from subtitles_ocr.pipeline.event_cleanup import CleanedEvent, EventCleanupStage
 from subtitles_ocr.pipeline.export import ExportStage
 from subtitles_ocr.pipeline.frame_processing.iterator import ComposedFrame
 from subtitles_ocr.pipeline.group import GroupStage
+from subtitles_ocr.pipeline.normalize import NormalizeStage
 from subtitles_ocr.pipeline.ocr import OcrStage
 
 from tests.integration.conftest import (
@@ -86,19 +82,6 @@ def _composed_frames_for(globals_: PipelineGlobals) -> list[ComposedFrame]:
     ]
 
 
-def _build_doc_cleanup_factory(event_count: int):
-    """Factory that returns DocCleanupResult with N events echoing input ids."""
-
-    def factory(schema, prompt):
-        return DocCleanupResult(
-            events=[
-                FinalEvent(event_id=i, cleaned_text=f"final {i}") for i in range(event_count)
-            ]
-        )
-
-    return factory
-
-
 def _run_event_cleanup_factory(schema, prompt):
     return CleanedEvent(text="canonical")
 
@@ -126,7 +109,6 @@ class StageRunner:
         ffmpeg: FakeFfmpeg | None = None,
         frame_reader: FakeFrameReader | None = None,
         event_llm: FakeLlm | None = None,
-        doc_llm: FakeLlm | None = None,
     ) -> None:
         self.globals_ = globals_
         self.ocr_config = ocr_config or OcrConfig()
@@ -137,11 +119,9 @@ class StageRunner:
         self.frame_reader = frame_reader or FakeFrameReader(
             width=globals_.fansub_width, height=globals_.fansub_height
         )
-        # Default LLM fakes — event-cleanup is reached only with non-consensus
+        # Default LLM fake — event-cleanup is reached only with non-consensus
         # text, but we wire one to detect any unwanted invocation.
         self.event_llm = event_llm or FakeLlm(response_factory=_run_event_cleanup_factory)
-        # DocCleanup is reached unconditionally; provide a 1-event response.
-        self.doc_llm = doc_llm or FakeLlm(response_factory=_build_doc_cleanup_factory(1))
 
     def run_all(self) -> None:
         g = self.globals_
@@ -167,18 +147,7 @@ class StageRunner:
         ColorStage(frame_reader=self.frame_reader).run(g, ColorConfig())
         EventCleanupStage(llm=self.event_llm).run(g, self.event_cleanup_config)
 
-        # DocCleanup factory must size to the number of grouped events; for the
-        # canonical "all frames same text" case this is exactly 1.
-        events_path = g.workdir / "07_group" / "events.json"
-        from subtitles_ocr.pipeline.group import GroupResult
-
-        event_count = len(
-            GroupResult.model_validate_json(events_path.read_text()).events
-        )
-        # Reconfigure doc_llm factory to match event count (in case caller didn't).
-        self.doc_llm.response_factory = _build_doc_cleanup_factory(event_count)
-
-        DocCleanupStage(llm=self.doc_llm).run(g, DocCleanupConfig(model="m"))
+        NormalizeStage().run(g, NormalizeConfig())
         ExportStage().run(g, ExportConfig())
 
 
@@ -209,8 +178,8 @@ def test_first_run_writes_every_sidecar_and_produces_ass(
     assert (w / "09_color" / "colors.meta.json").exists()
     assert (w / "10_event_cleanup" / "cleaned.jsonl").exists()
     assert (w / "10_event_cleanup" / "cleaned.meta.json").exists()
-    assert (w / "11_doc_cleanup" / "cleaned_final.json").exists()
-    assert (w / "11_doc_cleanup" / "cleaned_final.meta.json").exists()
+    assert (w / "11_normalize" / "normalized.json").exists()
+    assert (w / "11_normalize" / "normalized.meta.json").exists()
     assert integration_globals.out_path.exists()
 
 
@@ -223,8 +192,10 @@ def test_rerun_with_no_changes_skips_every_recompute(
     transcodes_after_1 = len(runner.ffmpeg.transcode_calls)
     ocr_calls_after_1 = runner.ocr_engine.call_count
     reader_calls_after_1 = runner.frame_reader.call_count
-    doc_llm_calls_after_1 = runner.doc_llm.call_count
     event_llm_calls_after_1 = runner.event_llm.call_count
+    normalize_mtime_after_1 = (
+        runner.globals_.workdir / "11_normalize" / "normalized.json"
+    ).stat().st_mtime_ns
 
     runner.run_all()
 
@@ -235,9 +206,12 @@ def test_rerun_with_no_changes_skips_every_recompute(
     # injected directly, OCR re-iterates them all but resume_index() == 5
     # short-circuits each one — call_count stays equal.
     assert runner.ocr_engine.call_count == ocr_calls_after_1
-    # Color, DocCleanup: cache hit → no extra reader / LLM calls
+    # Color: cache hit → no extra reader call
     assert runner.frame_reader.call_count == reader_calls_after_1
-    assert runner.doc_llm.call_count == doc_llm_calls_after_1
+    # Normalize: cache hit → output file not rewritten
+    assert (
+        runner.globals_.workdir / "11_normalize" / "normalized.json"
+    ).stat().st_mtime_ns == normalize_mtime_after_1
     # EventCleanup: consensus text → no LLM call to begin with, both runs == 0
     assert runner.event_llm.call_count == event_llm_calls_after_1
 
@@ -250,7 +224,7 @@ def test_bumping_group_stage_version_reexecutes_group_and_downstream_fingerprint
       - Group rewrites events.json → Animation's input fingerprint of group
         events changes → Animation invalidates → animation.json mtime changes
         → Color's input fingerprint changes → Color invalidates
-      - DocCleanup fingerprints event_cleanup_jsonl; that file is rewritten
+      - Normalize fingerprints event_cleanup_jsonl; that file is rewritten
         only if EventCleanup re-runs, but EventCleanup has no input
         fingerprints so it does not invalidate from upstream changes.
       - Conform / Alignment / OCR are upstream of Group → must NOT invalidate.
@@ -280,14 +254,15 @@ def test_changing_nocachekey_field_does_not_reexecute_any_fingerprinted_stage(
     integration_globals: PipelineGlobals,
 ) -> None:
     """EventCleanupConfig.parallelism is NoCacheKey; flipping it must not
-    invalidate. We assert via the doc_llm call count (DocCleanup runs
-    unconditionally on each invocation only when its cache is invalidated).
+    invalidate. We assert via the normalize output mtime (Normalize rewrites
+    the file only when its cache is invalidated).
     """
     runner = StageRunner(integration_globals)
     runner.run_all()
     transcodes_baseline = len(runner.ffmpeg.transcode_calls)
     reader_baseline = runner.frame_reader.call_count
-    doc_llm_baseline = runner.doc_llm.call_count
+    normalize_path = runner.globals_.workdir / "11_normalize" / "normalized.json"
+    normalize_mtime_baseline = normalize_path.stat().st_mtime_ns
 
     # Flip a NoCacheKey field on EventCleanupConfig
     runner.event_cleanup_config = EventCleanupConfig(
@@ -298,7 +273,7 @@ def test_changing_nocachekey_field_does_not_reexecute_any_fingerprinted_stage(
     # No stage invalidates
     assert len(runner.ffmpeg.transcode_calls) == transcodes_baseline
     assert runner.frame_reader.call_count == reader_baseline
-    assert runner.doc_llm.call_count == doc_llm_baseline
+    assert normalize_path.stat().st_mtime_ns == normalize_mtime_baseline
 
 
 def test_changing_cache_invalidating_group_field_reexecutes_group_chain(

@@ -30,7 +30,7 @@ _STAGE_NAME = "11_normalize"
 _OUT_DIR = "11_normalize"
 _OUT_FILE = "normalized.json"
 _META_FILE = "normalized.meta.json"
-_IN_PATH = ("09_event_cleanup", "cleaned.jsonl")
+_IN_PATH = ("10_event_cleanup", "cleaned.jsonl")
 
 # Invisible characters to strip after NFKC normalization. NFKC already folds
 # NBSP (U+00A0) into a regular space, so it is absent here. ZWJ (U+200D) is

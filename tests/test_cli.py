@@ -168,10 +168,10 @@ def test_parse_args_ar_strategy_only_on_conform(tmp_path: Path) -> None:
     assert not hasattr(config, "ar_strategy")
 
 
-def test_parse_args_synopsis_routed_to_doc_cleanup(tmp_path: Path) -> None:
-    syn = tmp_path / "syn.txt"
-    _globals, config, _debug = _parse([*_base_args(tmp_path), "--synopsis", str(syn)])
-    assert config.doc_cleanup.synopsis_path == syn
+def test_parse_args_synopsis_flag_removed(tmp_path: Path) -> None:
+    """ADR-0005: --synopsis is no longer a recognized flag."""
+    with pytest.raises(SystemExit):
+        _parse([*_base_args(tmp_path), "--synopsis", str(tmp_path / "syn.txt")])
 
 
 def test_parse_args_color_cluster_threshold_routed_to_export(tmp_path: Path) -> None:
@@ -203,18 +203,16 @@ def test_parse_args_event_cleanup_parallelism_routed(tmp_path: Path) -> None:
     assert config.event_cleanup.parallelism == 8
 
 
-def test_parse_args_doc_cleanup_model_routed(tmp_path: Path) -> None:
-    _globals, config, _debug = _parse(
-        [*_base_args(tmp_path), "--doc-cleanup-model", "qwen2.5:14b"]
-    )
-    assert config.doc_cleanup.model == "qwen2.5:14b"
+def test_parse_args_doc_cleanup_model_flag_removed(tmp_path: Path) -> None:
+    """ADR-0005: --doc-cleanup-model is no longer a recognized flag."""
+    with pytest.raises(SystemExit):
+        _parse([*_base_args(tmp_path), "--doc-cleanup-model", "any"])
 
 
-def test_parse_args_doc_cleanup_parallelism_routed(tmp_path: Path) -> None:
-    _globals, config, _debug = _parse(
-        [*_base_args(tmp_path), "--doc-cleanup-parallelism", "3"]
-    )
-    assert config.doc_cleanup.parallelism == 3
+def test_parse_args_doc_cleanup_parallelism_flag_removed(tmp_path: Path) -> None:
+    """ADR-0005: --doc-cleanup-parallelism is no longer a recognized flag."""
+    with pytest.raises(SystemExit):
+        _parse([*_base_args(tmp_path), "--doc-cleanup-parallelism", "3"])
 
 
 def test_parse_args_hardsub_audio_track_routed_to_alignment(tmp_path: Path) -> None:
@@ -334,7 +332,7 @@ def test_build_stages_in_pipeline_order() -> None:
         "AnimationStage",
         "ColorStage",
         "EventCleanupStage",
-        "DocCleanupStage",
+        "NormalizeStage",
         "ExportStage",
     ]
 

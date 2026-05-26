@@ -192,7 +192,7 @@ def test_normalize_result_round_trip() -> None:
 
 
 def _write_event_cleanup_jsonl(workdir: Path, events: list[tuple[int, str]]) -> None:
-    d = workdir / "09_event_cleanup"
+    d = workdir / "10_event_cleanup"
     d.mkdir(parents=True, exist_ok=True)
     lines = [
         json.dumps(

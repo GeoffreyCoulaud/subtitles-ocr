@@ -112,7 +112,7 @@ def _build_fake_stages(recorder: _Recorder) -> list:
         ("Animation", "animation"),
         ("Color", "color"),
         ("EventCleanup", "event_cleanup"),
-        ("DocCleanup", "doc_cleanup"),
+        ("Normalize", "normalize"),
         ("Export", "export"),
     ]
     return [_fake_stage_cls(name, field)(recorder) for name, field in spec]
@@ -144,7 +144,7 @@ def test_main_runs_all_nine_stages_in_order(tmp_path: Path) -> None:
         "Animation",
         "Color",
         "EventCleanup",
-        "DocCleanup",
+        "Normalize",
         "Export",
     ]
 
@@ -164,7 +164,7 @@ def test_main_each_stage_receives_its_sub_config(tmp_path: Path) -> None:
         "Animation": "AnimationConfig",
         "Color": "ColorConfig",
         "EventCleanup": "EventCleanupConfig",
-        "DocCleanup": "DocCleanupConfig",
+        "Normalize": "NormalizeConfig",
         "Export": "ExportConfig",
     }
     for stage_name, _g, sub_config in recorder.events:
@@ -215,8 +215,6 @@ def test_main_writes_pipeline_log(tmp_path: Path) -> None:
 def test_main_routes_flags_to_their_sub_configs(tmp_path: Path) -> None:
     """End-to-end: every routed CLI flag reaches the right sub-config."""
     recorder = _Recorder()
-    syn = tmp_path / "synopsis.txt"
-    syn.write_text("a synopsis")
     rc = main(
         [
             *_base_argv(tmp_path),
@@ -224,9 +222,6 @@ def test_main_routes_flags_to_their_sub_configs(tmp_path: Path) -> None:
             "--ocr-device", "cpu",
             "--event-cleanup-model", "m-event",
             "--event-cleanup-parallelism", "7",
-            "--doc-cleanup-model", "m-doc",
-            "--doc-cleanup-parallelism", "2",
-            "--synopsis", str(syn),
             "--color-cluster-threshold", "15.5",
             "--ar-strategy", "letterbox",
         ],
@@ -239,9 +234,6 @@ def test_main_routes_flags_to_their_sub_configs(tmp_path: Path) -> None:
     assert by_name["Ocr"].device == "cpu"
     assert by_name["EventCleanup"].model == "m-event"
     assert by_name["EventCleanup"].parallelism == 7
-    assert by_name["DocCleanup"].model == "m-doc"
-    assert by_name["DocCleanup"].parallelism == 2
-    assert by_name["DocCleanup"].synopsis_path == syn
     assert by_name["Export"].color_cluster_threshold == 15.5
     assert by_name["Conform"].ar_strategy == "letterbox"
 

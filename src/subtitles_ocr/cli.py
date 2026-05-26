@@ -34,7 +34,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workdir", required=True, type=Path)
 
     p.add_argument("--language", default="latin")
-    p.add_argument("--synopsis", type=Path, default=None)
     p.add_argument("--debug-images", action="store_true")
     p.add_argument(
         "--ar-strategy",
@@ -52,8 +51,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--event-cleanup-model", default=None)
     p.add_argument("--event-cleanup-parallelism", type=int, default=1)
-    p.add_argument("--doc-cleanup-model", default=None)
-    p.add_argument("--doc-cleanup-parallelism", type=int, default=1)
     p.add_argument("--color-cluster-threshold", type=float, default=10.0)
     p.add_argument("--debug", action="store_true")
 
@@ -95,9 +92,6 @@ def _build_config(ns: argparse.Namespace) -> PipelineConfig:
     config.ocr.device = ns.ocr_device
     config.event_cleanup.model = ns.event_cleanup_model
     config.event_cleanup.parallelism = ns.event_cleanup_parallelism
-    config.doc_cleanup.model = ns.doc_cleanup_model
-    config.doc_cleanup.parallelism = ns.doc_cleanup_parallelism
-    config.doc_cleanup.synopsis_path = ns.synopsis
     config.export.color_cluster_threshold = ns.color_cluster_threshold
     return config
 
@@ -182,10 +176,10 @@ def build_stages(config: PipelineConfig, globals: PipelineGlobals | None = None)
     from subtitles_ocr.pipeline.animation import AnimationStage
     from subtitles_ocr.pipeline.color import ColorStage
     from subtitles_ocr.pipeline.conform import ConformStage
-    from subtitles_ocr.pipeline.doc_cleanup import DocCleanupStage
     from subtitles_ocr.pipeline.event_cleanup import EventCleanupStage
     from subtitles_ocr.pipeline.export import ExportStage
     from subtitles_ocr.pipeline.group import GroupStage
+    from subtitles_ocr.pipeline.normalize import NormalizeStage
     from subtitles_ocr.pipeline.ocr import OcrStage
 
     if globals is not None:
@@ -212,7 +206,6 @@ def build_stages(config: PipelineConfig, globals: PipelineGlobals | None = None)
         alignment = AlignmentStage(**align_kwargs)
     else:
         alignment = AlignmentStage()
-    from subtitles_ocr.llm.ollama import OllamaLlmClient
     from subtitles_ocr.pipeline.frame_processing.iterator import _OpenCvFrameReader
 
     return [
@@ -223,9 +216,7 @@ def build_stages(config: PipelineConfig, globals: PipelineGlobals | None = None)
         AnimationStage(),
         ColorStage(frame_reader=_OpenCvFrameReader()),
         EventCleanupStage(),
-        # doc_cleanup sends the whole event list in one prompt; allow more time
-        # than the default 60s, especially for CPU-only or small models.
-        DocCleanupStage(llm=OllamaLlmClient(request_timeout_seconds=300.0)),
+        NormalizeStage(),
         ExportStage(),
     ]
 

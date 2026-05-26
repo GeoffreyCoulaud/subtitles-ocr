@@ -21,11 +21,11 @@ from subtitles_ocr.config import (
     AnimationConfig,
     ColorConfig,
     ConformConfig,
-    DocCleanupConfig,
     EventCleanupConfig,
     ExportConfig,
     FrameProcessingConfig,
     GroupConfig,
+    NormalizeConfig,
     OcrConfig,
     PipelineGlobals,
 )
@@ -33,15 +33,11 @@ from subtitles_ocr.pipeline.alignment.stage import AlignmentConfig, AlignmentSta
 from subtitles_ocr.pipeline.animation import AnimationStage
 from subtitles_ocr.pipeline.color import ColorStage
 from subtitles_ocr.pipeline.conform import ConformStage
-from subtitles_ocr.pipeline.doc_cleanup import (
-    DocCleanupResult,
-    DocCleanupStage,
-    FinalEvent,
-)
 from subtitles_ocr.pipeline.event_cleanup import CleanedEvent, EventCleanupStage
 from subtitles_ocr.pipeline.export import ExportStage
 from subtitles_ocr.pipeline.frame_processing.iterator import ComposedFrame
-from subtitles_ocr.pipeline.group import GroupResult, GroupStage
+from subtitles_ocr.pipeline.group import GroupStage
+from subtitles_ocr.pipeline.normalize import NormalizeStage
 from subtitles_ocr.pipeline.ocr import OcrStage
 
 from tests.integration.conftest import (
@@ -106,27 +102,15 @@ def test_full_pipeline_produces_pysubs2_parsable_ass(
         frame_reader=FakeFrameReader(width=g.fansub_width, height=g.fansub_height)
     ).run(g, ColorConfig())
 
-    # Stage 10 — consensus text → no LLM call needed
+    # Stage 10 — consensus text → no LLM call needed; the canonical text
+    # "subtitle" must pass the noise filter (>= 2 chars + alpha) so that
+    # the normalize stage in 11 preserves the events for export.
     EventCleanupStage(
-        llm=FakeLlm(response_factory=lambda s, p: CleanedEvent(text="X"))
+        llm=FakeLlm(response_factory=lambda s, p: CleanedEvent(text="subtitle"))
     ).run(g, EventCleanupConfig(model="m"))
 
-    # Stage 11 — must echo the exact event_ids in order
-    events_count = len(
-        GroupResult.model_validate_json(
-            (g.workdir / "07_group" / "events.json").read_text()
-        ).events
-    )
-    DocCleanupStage(
-        llm=FakeLlm(
-            response_factory=lambda s, p: DocCleanupResult(
-                events=[
-                    FinalEvent(event_id=i, cleaned_text=f"final {i}")
-                    for i in range(events_count)
-                ]
-            )
-        )
-    ).run(g, DocCleanupConfig(model="m"))
+    # Stage 11 — deterministic normalization (ADR-0005)
+    NormalizeStage().run(g, NormalizeConfig())
 
     # Stage 12
     ExportStage().run(g, ExportConfig())
@@ -140,7 +124,7 @@ def test_full_pipeline_produces_pysubs2_parsable_ass(
         g.workdir / "08_animation" / "animation.json",
         g.workdir / "09_color" / "colors.json",
         g.workdir / "10_event_cleanup" / "cleaned.jsonl",
-        g.workdir / "11_doc_cleanup" / "cleaned_final.json",
+        g.workdir / "11_normalize" / "normalized.json",
         g.out_path,
     ]
     for p in expected:
@@ -149,5 +133,7 @@ def test_full_pipeline_produces_pysubs2_parsable_ass(
     # The .ass file is parsable by pysubs2 and contains at least one event
     subs = pysubs2.load(str(g.out_path), encoding="utf-8")
     assert len(subs.events) >= 1
-    # First event has the expected cleaned text (pysubs2 unescapes \N in text)
-    assert "final 0" in subs.events[0].text
+    # First event preserves the canonical OCR text emitted upstream.
+    # (FakeOcrEngine produces "hello"; event_cleanup hits the consensus path
+    # because all OCR variants agree, so the LLM factory is never reached.)
+    assert "hello" in subs.events[0].text
