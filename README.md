@@ -23,7 +23,7 @@ appear as separate orchestrated stages.
 | 5  | Animation       | MVP: passthrough — emits a static `AnimatedEvent` per group event. Reserved for `\move` / `\fad` (Phase 6)   |
 | 6  | Color           | Per-event color extraction: quad-rectified temporal median → Otsu → distance-transform → HSV mode clustering  |
 | 7  | Event cleanup   | Per-event LLM call reconciles OCR variants and fixes confusables; skipped if all variants strictly identical  |
-| 8  | Doc cleanup     | Single LLM call over the whole episode for narrative coherence; optional `--synopsis` injected into prompt   |
+| 8  | Normalize       | Deterministic text normalization: Unicode NFKC, invisible-char stripping, whitespace collapse, OCR-noise pruning (ADR-0005) |
 | 9  | Export          | pysubs2 writes `.ass`; styles synthesised by position × color cluster (ΔE76 in LAB)                          |
 
 Stages 3-5 of ADR-0002 (diff, mask, compose) live as a streaming library
@@ -46,7 +46,7 @@ workdir/
   08_animation/      animation.json, animation.meta.json
   09_color/          colors.json, colors.meta.json
   10_event_cleanup/  cleaned.jsonl, cleaned.meta.json
-  11_doc_cleanup/    cleaned_final.json, cleaned_final.meta.json
+  11_normalize/      normalized.json, normalized.meta.json
   pipeline.log
 ```
 
@@ -77,7 +77,6 @@ subtitles-ocr \
   --out <output.ass> \
   --workdir <intermediates/> \
   [--language latin] \
-  [--synopsis path/to/synopsis.md] \
   [--debug-images] \
   [--ar-strategy error|letterbox|crop] \
   [--hardsub-audio-track <idx>] \
@@ -87,8 +86,6 @@ subtitles-ocr \
   [--ocr-device auto|cuda|rocm|cpu] \
   [--event-cleanup-model <ollama-name>] \
   [--event-cleanup-parallelism <int>] \
-  [--doc-cleanup-model <ollama-name>] \
-  [--doc-cleanup-parallelism <int>] \
   [--color-cluster-threshold <float>] \
   [--debug]
 ```
@@ -102,7 +99,6 @@ subtitles-ocr \
 | `--out`                         | (required)  | Output `.ass` file path                                                              |
 | `--workdir`                     | (required)  | Directory for intermediate artefacts                                                 |
 | `--language`                    | `latin`     | PaddleOCR language code                                                              |
-| `--synopsis`                    | none        | Markdown file fed to the doc-cleanup LLM for narrative coherence                     |
 | `--debug-images`                | off         | Persist diff/compose debug PNGs (large; for diagnostics only)                        |
 | `--ar-strategy`                 | `error`     | Aspect-ratio mismatch policy (only `error` is implemented in MVP)                    |
 | `--hardsub-audio-track`         | none        | Audio track index in the hardsub for audio alignment (Stage 2a)                       |
@@ -112,8 +108,6 @@ subtitles-ocr \
 | `--ocr-device`                  | `auto`      | `auto` warns and falls back to CPU on GPU failure; explicit values hard-fail         |
 | `--event-cleanup-model`         | none        | Ollama model name used by Stage 7                                                    |
 | `--event-cleanup-parallelism`   | `1`         | ThreadPoolExecutor size for Stage 7                                                  |
-| `--doc-cleanup-model`           | none        | Ollama model name used by Stage 8                                                    |
-| `--doc-cleanup-parallelism`     | `1`         | Sequential by default; reserved for a future chunked-fallback path                   |
 | `--color-cluster-threshold`     | `10.0`      | ΔE76 distance threshold for grouping events into shared `.ass` styles                |
 | `--debug`                       | off         | Lowers stdout log level to DEBUG                                                     |
 
@@ -124,7 +118,7 @@ subtitles-ocr \
 - **[uv](https://docs.astral.sh/uv/)** — manages Python and dependencies
 - **[ffmpeg](https://ffmpeg.org/download.html)** — `ffmpeg` + `ffprobe` on `$PATH`
 - **An OpenAI-compatible LLM server** — [Ollama](https://ollama.com) is
-  recommended for Stage 7 and Stage 8; see
+  recommended for Stage 7 (event cleanup); see
   [docs/inference-setup.md](docs/inference-setup.md) for remote and
   multi-machine setups
 
@@ -154,3 +148,4 @@ uv run subtitles-ocr \
 - [ADR-0002 — detailed pipeline design](docs/ADR-0002-Pipeline-Detailed-Design.md)
 - [ADR-0003 — animation reconstruction scope](docs/ADR-0003-Animation-Reconstruction.md)
 - [ADR-0004 — shared infrastructure](docs/ADR-0004-Shared-Infrastructure.md)
+- [ADR-0005 — normalize stage refactor (supersedes ADR-0002 §3 Stage 10)](docs/ADR-0005-Normalize-Stage-Refactor.md)
