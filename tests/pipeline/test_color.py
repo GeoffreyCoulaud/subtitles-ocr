@@ -312,6 +312,60 @@ def test_rotated_quad_is_rectified(tmp_workdir, mock_globals, reader_factory):
     assert ec.fill_color[0] - ec.outline_color[0] > 80
 
 
+def test_fade_in_filters_by_absolute_frame_when_members_are_sparse(
+    tmp_workdir, mock_globals, reader_factory
+):
+    """When member_frame_indices has internal gaps (Stage 7 gap tolerance), the
+    fade window must be applied to absolute frame indices, not to list
+    positions.
+
+    Setup: 10 matched members spanning absolute frames [0..11] with a gap at
+    {2, 3}. fade_in_ms=200 → 5 absolute frames at 24fps. The fade window is
+    absolute frames [0, 5), so members 5..11 (seven entries) must survive and
+    be read by the frame reader. Members 0, 1 (inside the fade) and the gaps
+    at 2, 3 must not.
+
+    A positional slice (`members[5:]`) would drop the matched frame at
+    absolute index 5 — that's the regression this test guards against.
+    """
+    text_box = (20, 30, 300, 130)
+    quad = _axis_aligned_quad(text_box)
+    # Frames 0..4 should be excluded by the fade window.
+    # Frames 5..11 should be read.
+    junk = np.full((160, 320, 3), 64, dtype=np.uint8)
+    junk[:, :, 0] = 255  # noisy red — would skew Otsu if leaked through
+    frames: dict[int, np.ndarray] = {0: junk.copy(), 1: junk.copy()}
+    for i in range(4, 12):
+        frames[i] = _make_white_on_black_frame(text_box=text_box)
+    reader = reader_factory(frames)
+
+    member_frames = [0, 1, 4, 5, 6, 7, 8, 9, 10, 11]  # gap at {2, 3}
+    event = AnimatedEvent(
+        event_id=0,
+        fansub_frame_start=0,
+        fansub_frame_end=12,
+        raw_ocr_texts=["t"] * len(member_frames),
+        raw_ocr_confidences=[0.9] * len(member_frames),
+        quads_per_frame={i: quad for i in member_frames},
+        quad_median=quad,
+        member_frame_indices=member_frames,
+        motion=None,
+        fade_in_ms=200,  # → fade_in_frames=5 at 24fps; absolute window [0, 5)
+        fade_out_ms=0,
+    )
+    _write_animation_json(tmp_workdir, [event])
+
+    stage = ColorStage(frame_reader=reader)
+    result = stage.run(mock_globals, ColorConfig())
+
+    # The frames asked for must be EXACTLY the matched members at absolute
+    # frame indices >= 5 — i.e., {5, 6, 7, 8, 9, 10, 11}.
+    assert sorted(set(reader.calls)) == [5, 6, 7, 8, 9, 10, 11]
+    ec = result.events[0]
+    assert ec.style_supported is True
+    assert ec.fill_color is not None and ec.fill_color[0] >= 200
+
+
 def test_resume_skips_when_sidecar_matches(tmp_workdir, mock_globals, reader_factory):
     """If colors.json + meta exist and meta matches, skip recomputation."""
     text_box = (20, 30, 300, 130)

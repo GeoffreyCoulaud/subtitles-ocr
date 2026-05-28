@@ -105,14 +105,17 @@ class ColorStage:
         globals: PipelineGlobals,
         config: ColorConfig,
     ) -> EventColors:
-        # Exclude fade-in / fade-out frames
+        # Exclude fade-in / fade-out frames by absolute frame index.
+        # Stage 7 gap tolerance may produce sparse member_frame_indices, so
+        # filtering by list position would drop the wrong frames.
         fade_in_frames = ms_to_frame(event.fade_in_ms, globals.fps)
         fade_out_frames = ms_to_frame(event.fade_out_ms, globals.fps)
-        members = list(event.member_frame_indices)
-        if fade_in_frames > 0:
-            members = members[fade_in_frames:]
-        if fade_out_frames > 0:
-            members = members[: len(members) - fade_out_frames] if fade_out_frames < len(members) else []
+        start = event.fansub_frame_start
+        end = event.fansub_frame_end
+        members = [
+            m for m in event.member_frame_indices
+            if start + fade_in_frames <= m < end - fade_out_frames
+        ]
 
         if len(members) < 3:
             return EventColors(
