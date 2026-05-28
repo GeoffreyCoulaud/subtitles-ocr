@@ -4,7 +4,7 @@ Covers:
  - basic single-trajectory: 3 consecutive frames, same text + same quad → 1 event
  - simultaneous top + bottom subs on same frames → 2 distinct trajectories
  - ORPHAN frame in the middle of a textually continuous trajectory → single event
- - ALIGNED frame with no OCR detection in the middle → breaks the trajectory
+ - ALIGNED frame with no OCR detection: carried within max_gap_frames, broken when budget exhausted (max_gap_frames=0)
  - text Levenshtein above threshold → trajectory break
  - quad IoU below threshold → trajectory break
  - `quads_per_frame` keyed by `fansub_frame_idx`
@@ -212,9 +212,12 @@ def test_orphan_frame_does_not_break_trajectory(tmp_workdir: Path) -> None:
     assert ev.raw_ocr_texts == ["hi", "hi", "hi", "hi"]
 
 
-def test_aligned_frame_without_detection_breaks_trajectory(tmp_workdir: Path) -> None:
+def test_aligned_frame_without_detection_breaks_trajectory_when_gap_budget_zero(
+    tmp_workdir: Path,
+) -> None:
+    """Pre-gap-tolerance semantics, re-expressed: with max_gap_frames=0, a
+    single ALIGNED frame with no detection breaks the trajectory immediately."""
     q = _quad(100, 800)
-    # Frame 2 is ALIGNED but produced an empty detection list.
     ocr_frames = [
         FrameOcrResult(fansub_frame_idx=0, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
         FrameOcrResult(fansub_frame_idx=1, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
@@ -227,8 +230,9 @@ def test_aligned_frame_without_detection_breaks_trajectory(tmp_workdir: Path) ->
         segments=_all_aligned_segment(5), ocr_frames=ocr_frames,
     )
 
+    cfg = GroupConfig(max_gap_frames=0)
     stage = GroupStage()
-    result = stage.run(_globals_with(tmp_workdir, 5), GroupConfig())
+    result = stage.run(_globals_with(tmp_workdir, 5), cfg)
 
     assert len(result.events) == 2
     a, b = sorted(result.events, key=lambda e: e.fansub_frame_start)
