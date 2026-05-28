@@ -51,13 +51,23 @@ class GroupResult(BaseModel):
 
 @dataclass
 class _Trajectory:
-    """Mutable in-flight trajectory. Finalized into a SubtitleEvent at break time."""
+    """Mutable in-flight trajectory. Finalized into a SubtitleEvent at break time.
+
+    `stale_frames` counts consecutive ALIGNED frames since the last match. The
+    trajectory is finalized when this exceeds `max_gap_frames`; the event's
+    end_exclusive is then `last_matched_frame + 1` (the gap frames are not
+    part of the event's lifetime).
+    """
 
     start_frame: int
+    last_matched_frame: int
+    stale_frames: int = 0
     members: list[tuple[int, OcrDetection]] = field(default_factory=list)
 
     def extend(self, frame_idx: int, det: OcrDetection) -> None:
         self.members.append((frame_idx, det))
+        self.last_matched_frame = frame_idx
+        self.stale_frames = 0
 
     def last_detection(self) -> OcrDetection:
         return self.members[-1][1]
@@ -329,27 +339,24 @@ class GroupStage:
         finalized: list[SubtitleEvent] = []
         next_event_id = 0
 
-        def finalize_all(end_exclusive: int) -> None:
+        def finalize_traj(traj: _Trajectory) -> None:
             nonlocal next_event_id
-            for traj in active:
-                finalized.append(_finalize(traj, next_event_id, end_exclusive))
-                next_event_id += 1
-            active.clear()
+            finalized.append(
+                _finalize(traj, next_event_id, traj.last_matched_frame + 1)
+            )
+            next_event_id += 1
 
         for idx in range(globs.fansub_total_frames):
             status = status_by_frame.get(idx, "ORPHAN")
 
             if status != "ALIGNED":
                 # ORPHAN / USER_SKIPPED: trajectories carry over untouched.
+                # Stale counter is NOT incremented (non-ALIGNED frames are
+                # neutral per design — they neither match nor break trajectories).
                 continue
 
             frame_result = ocr_by_frame.get(idx)
             detections = list(frame_result.detections) if frame_result is not None else []
-
-            if not detections:
-                # ALIGNED frame with no detection breaks all active trajectories.
-                finalize_all(end_exclusive=idx)
-                continue
 
             # Greedy 1-1 matching: for each active trajectory, pick the best
             # unassigned detection (highest IoU among those satisfying both
@@ -372,24 +379,30 @@ class GroupStage:
                     assigned_det_idx.add(best_d)
                     extended_traj_indices.add(t_i)
 
-            # Unmatched active trajectories → finalize at idx (half-open end).
+            # Non-extended active trajectories: increment stale; finalize only
+            # if the gap budget is exceeded.
             survivors: list[_Trajectory] = []
             for t_i, traj in enumerate(active):
                 if t_i in extended_traj_indices:
                     survivors.append(traj)
+                    continue
+                traj.stale_frames += 1
+                if traj.stale_frames > config.max_gap_frames:
+                    finalize_traj(traj)
                 else:
-                    finalized.append(_finalize(traj, next_event_id, idx))
-                    next_event_id += 1
+                    survivors.append(traj)
             active = survivors
 
             # Unmatched detections → start new trajectories.
             for d_i, det in enumerate(detections):
                 if d_i in assigned_det_idx:
                     continue
-                new_traj = _Trajectory(start_frame=idx)
+                new_traj = _Trajectory(start_frame=idx, last_matched_frame=idx)
                 new_traj.extend(idx, det)
                 active.append(new_traj)
 
-        # Flush remaining trajectories at the video end (half-open end = total).
-        finalize_all(end_exclusive=globs.fansub_total_frames)
+        # Flush remaining trajectories at the video end: each ends at its own
+        # last_matched_frame + 1, NOT at fansub_total_frames.
+        for traj in active:
+            finalize_traj(traj)
         return finalized

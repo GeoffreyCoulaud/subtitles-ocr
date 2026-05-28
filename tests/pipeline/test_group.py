@@ -403,3 +403,35 @@ def test_group_stage_version_is_bumped_for_gap_tolerance() -> None:
     pre-gap-tolerance grouping logic."""
     from subtitles_ocr.pipeline.group import STAGE_VERSION
     assert STAGE_VERSION == 2
+
+
+def test_single_aligned_gap_within_tolerance_keeps_trajectory(tmp_workdir: Path) -> None:
+    """Frame N has no detection on an ALIGNED frame; with gap tolerance >= 1,
+    the trajectory survives and re-acquires on the next frame.
+
+    Members exclude the gap frame; event end_exclusive = last_matched_frame + 1.
+    """
+    q = _quad(100, 800)
+    ocr_frames = [
+        FrameOcrResult(fansub_frame_idx=0, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=1, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=2, detections=[]),
+        FrameOcrResult(fansub_frame_idx=3, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=4, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+    ]
+    _setup_workdir(
+        tmp_workdir, fansub_total_frames=5,
+        segments=_all_aligned_segment(5), ocr_frames=ocr_frames,
+    )
+
+    stage = GroupStage()
+    result = stage.run(_globals_with(tmp_workdir, 5), GroupConfig())
+
+    assert len(result.events) == 1
+    ev = result.events[0]
+    assert ev.fansub_frame_start == 0
+    assert ev.fansub_frame_end == 5  # last_matched (4) + 1
+    assert ev.member_frame_indices == [0, 1, 3, 4]
+    assert ev.raw_ocr_texts == ["hi", "hi", "hi", "hi"]
+    assert ev.raw_ocr_confidences == [0.9, 0.9, 0.9, 0.9]
+    assert set(ev.quads_per_frame.keys()) == {0, 1, 3, 4}
