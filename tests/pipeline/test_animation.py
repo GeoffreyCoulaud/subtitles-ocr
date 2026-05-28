@@ -155,7 +155,7 @@ def test_writes_animation_json_and_sidecar(mock_globals: PipelineGlobals) -> Non
     assert meta_path.exists()
     meta = BaseMeta.model_validate_json(meta_path.read_text())
     assert meta.stage_name == "08_animation"
-    assert meta.stage_version == 3
+    assert meta.stage_version == 4
 
 
 def test_resume_skips_when_sidecar_matches(mock_globals: PipelineGlobals) -> None:
@@ -391,6 +391,37 @@ def _linear_ramp_scores(
     for k in range(fade_out_frames + 1, fade_out_frames + 1 + post_window):
         scores.setdefault(end_frame - 1 + k, 0.0)
     return scores
+
+
+def test_fade_in_detected_above_high_noise_floor(mock_globals: PipelineGlobals) -> None:
+    """Background subtraction must enable fade detection when the diff has a
+    noise floor close to the anchor (e.g., CRF / master mismatch between the
+    fansub and the raw video, where every pixel differs slightly even with
+    no subtitle present)."""
+    quads = {f: _quad_around(100, 50) for f in range(30, 50)}
+    ev = _make_event(event_id=0, start=30, end=50, quads=quads)
+    _write_group(mock_globals.workdir, [ev])
+
+    anchor = 1.0
+    background = 0.88  # 88% noise floor (matches observed Kenichi values)
+    fade_in_frames = 6  # 250ms @ 24fps
+
+    scores: dict[int, float] = {f: anchor for f in range(30, 50)}
+    # All pre-window frames sit at the noise floor by default (as they would
+    # on any real video where the fansub and raw differ everywhere).
+    for f in range(0, 30):
+        scores[f] = background
+    # Linear fade-in overrides the last fade_in_frames of the pre-window.
+    for k in range(1, fade_in_frames + 1):
+        frac = 1.0 - k / fade_in_frames
+        scores[30 - k] = background + frac * (anchor - background)
+
+    src = FakeDiffSource(scores)
+    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+
+    out = result.events[0]
+    assert out.fade_in_ms >= 125
+    assert out.fansub_frame_start < 30
 
 
 def test_fade_in_only(mock_globals: PipelineGlobals) -> None:

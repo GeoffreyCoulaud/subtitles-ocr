@@ -37,7 +37,17 @@ from subtitles_ocr.timing import ms_to_frame
 
 logger = logging.getLogger(__name__)
 
-STAGE_VERSION: int = 3
+STAGE_VERSION: int = 4
+
+# Number of edge frames (leftmost of pre-window for fade-in, rightmost of
+# post-window for fade-out) whose median diff-intensity defines the local
+# "no-subtitle" background. Two source masters (different CRFs, codecs, or
+# remasters) produce a non-zero diff baseline; subtracting it lets the fade
+# fitter see the actual subtitle ramp instead of being dominated by the noise
+# floor. 3 frames is short enough to stay outside any plausible fade ramp
+# (>125ms = 3 frames @24fps min_fade_duration_ms) while suppressing
+# single-frame intensity jitter.
+_FADE_BACKGROUND_SAMPLES: int = 3
 
 STAGE_NAME = "08_animation"
 
@@ -595,10 +605,12 @@ def _detect_fades(
             )
             if occupied.get(f, ev.event_id) == ev.event_id
         ]
+        in_background = _estimate_background(pre_frames, ev, source, side="in")
         t_in_ms = _fit_fade(
             ev,
             pre_frames,
             anchor_intensity,
+            background_intensity=in_background,
             anchor_frame=ev.fansub_frame_start,
             config=config,
             globals=globals,
@@ -616,10 +628,12 @@ def _detect_fades(
             )
             if occupied.get(f, ev.event_id) == ev.event_id
         ]
+        out_background = _estimate_background(post_frames, ev, source, side="out")
         t_out_ms = _fit_fade(
             ev,
             post_frames,
             anchor_intensity,
+            background_intensity=out_background,
             anchor_frame=ev.fansub_frame_end - 1,
             config=config,
             globals=globals,
@@ -662,11 +676,35 @@ def _detect_fades(
     return [ev.to_animated_event() for ev in events]
 
 
+def _estimate_background(
+    frames: list[int],
+    ev: _WorkingEvent,
+    source: DiffIntensitySource,
+    *,
+    side: str,
+    n_samples: int = _FADE_BACKGROUND_SAMPLES,
+) -> float:
+    """Median diff intensity at the edge of the fade-search window — the part
+    furthest from the event boundary, where any subtitle has long since
+    finished its fade. Returns 0.0 if no frames are available (caller will
+    interpret as "no background subtraction", matching the pre-existing
+    behaviour for fade-less-clean signals)."""
+    if not frames:
+        return 0.0
+    sample_frames = frames[:n_samples] if side == "in" else frames[-n_samples:]
+    intensities = sorted(
+        source.mean_intensity(f, _bbox_at_frame_for_event(ev, f))
+        for f in sample_frames
+    )
+    return float(intensities[len(intensities) // 2])
+
+
 def _fit_fade(
     ev: _WorkingEvent,
     frames: list[int],
     anchor_intensity: float,
     *,
+    background_intensity: float,
     anchor_frame: int,
     config: AnimationConfig,
     globals: PipelineGlobals,
@@ -675,11 +713,18 @@ def _fit_fade(
     side: str,
 ) -> int:
     score_lo, score_hi = config.fade_score_fit_range
+    denom = anchor_intensity - background_intensity
+    # Background ≥ anchor → no usable subtitle signal in this window. Anchor
+    # itself may have been measured on a frame that's not actually subtitle-on
+    # (mistimed event boundary), or the source is degenerate.
+    if denom <= 0.0:
+        return 0
     obs_xs: list[float] = []
     obs_ys: list[float] = []
     for f in frames:
         bbox = _bbox_at_frame_for_event(ev, f)
-        s = source.mean_intensity(f, bbox) / anchor_intensity
+        raw = source.mean_intensity(f, bbox)
+        s = (raw - background_intensity) / denom
         if score_lo <= s <= score_hi:
             obs_xs.append(float(f))
             obs_ys.append(s)

@@ -278,7 +278,7 @@ def test_group_stage_metadata() -> None:
 def test_animation_module_imports() -> None:
     from subtitles_ocr.pipeline import animation
 
-    assert animation.STAGE_VERSION == 2
+    assert animation.STAGE_VERSION == 4
 
 
 def test_animated_event_round_trip() -> None:
