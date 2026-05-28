@@ -573,3 +573,52 @@ def test_orphan_frames_do_not_consume_gap_budget(tmp_workdir: Path) -> None:
     assert ev.fansub_frame_start == 0
     assert ev.fansub_frame_end == 12  # last_matched=11, +1=12
     assert ev.member_frame_indices == [0, 1, 11]
+
+
+def test_unrelated_detection_during_gap_does_not_resurrect_or_kill_trajectory(
+    tmp_workdir: Path,
+) -> None:
+    """During a gap, a detection that fails BOTH Lev (text) and IoU (position)
+    versus the carried trajectory must:
+      - not be matched to that trajectory (no false merge);
+      - not reset its stale counter to 0;
+      - spawn its own new trajectory;
+      - leave the original trajectory eligible to re-acquire later.
+
+    Setup: trajectory "hi" at quad_top. Mid-gap: detection "totallyelse" at
+    quad_bottom (disjoint quad, very different text). Then "hi" at quad_top
+    again, within budget. Expected: 2 events. The "hi" event spans 0..end with
+    members at the two "hi" frames.
+    """
+    q_top = _quad(100, 50)
+    q_bot = _quad(100, 800)
+    ocr_frames = [
+        FrameOcrResult(fansub_frame_idx=0, detections=[OcrDetection(text="hi", confidence=0.9, quad=q_top)]),
+        # Frame 1: an unrelated detection at a disjoint quad with very different text.
+        FrameOcrResult(fansub_frame_idx=1, detections=[OcrDetection(text="totallyelse", confidence=0.9, quad=q_bot)]),
+        # Frame 2: empty (deliberate, to confirm stale ticks past the unrelated detection).
+        FrameOcrResult(fansub_frame_idx=2, detections=[]),
+        # Frame 3: "hi" back at quad_top → re-acquires.
+        FrameOcrResult(fansub_frame_idx=3, detections=[OcrDetection(text="hi", confidence=0.9, quad=q_top)]),
+    ]
+    _setup_workdir(
+        tmp_workdir, fansub_total_frames=4,
+        segments=_all_aligned_segment(4), ocr_frames=ocr_frames,
+    )
+
+    stage = GroupStage()
+    result = stage.run(_globals_with(tmp_workdir, 4), GroupConfig())  # default max_gap_frames=60
+
+    by_text = {tuple(sorted(set(ev.raw_ocr_texts))): ev for ev in result.events}
+    assert ("hi",) in by_text
+    assert ("totallyelse",) in by_text
+
+    hi_ev = by_text[("hi",)]
+    assert hi_ev.member_frame_indices == [0, 3]
+    assert hi_ev.fansub_frame_start == 0
+    assert hi_ev.fansub_frame_end == 4  # last_matched=3, +1=4
+
+    else_ev = by_text[("totallyelse",)]
+    assert else_ev.member_frame_indices == [1]
+    assert else_ev.fansub_frame_start == 1
+    assert else_ev.fansub_frame_end == 2  # last_matched=1, +1=2
