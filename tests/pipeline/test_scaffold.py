@@ -214,7 +214,7 @@ def test_ocr_stage_class_constructs_without_real_engine() -> None:
 def test_group_module_imports() -> None:
     from subtitles_ocr.pipeline import group
 
-    assert group.STAGE_VERSION == 1
+    assert group.STAGE_VERSION == 2
 
 
 def test_subtitle_event_round_trip() -> None:
