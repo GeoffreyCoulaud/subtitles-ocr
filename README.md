@@ -19,7 +19,7 @@ appear as separate orchestrated stages.
 | 1  | Conform         | ffmpeg downscales the raw to the fansub's resolution; output cached as lossless FFV1 MKV                     |
 | 2  | Alignment       | Hybrid audio (silero-VAD + hierarchical cross-correlation) + phash refinement; phash-only fallback           |
 | 3  | OCR             | PaddleOCR PP-OCRv5 server runs on composed (diff×mask) frames; streaming `iter_composed_frames` upstream     |
-| 4  | Group           | Per-quad trajectory tracking groups detections into events; identical text + IoU > 0.5 continues a trajectory |
+| 4  | Group           | Per-quad trajectory tracking groups detections into events; Lev<0.2 + IoU>0.5 continues a trajectory; up to `max_gap_frames` ALIGNED frames without a match are bridged |
 | 5  | Animation       | MVP: passthrough — emits a static `AnimatedEvent` per group event. Reserved for `\move` / `\fad` (Phase 6)   |
 | 6  | Color           | Per-event color extraction: quad-rectified temporal median → Otsu → distance-transform → HSV mode clustering  |
 | 7  | Event cleanup   | Per-event LLM call reconciles OCR variants and fixes confusables; skipped if all variants strictly identical  |
