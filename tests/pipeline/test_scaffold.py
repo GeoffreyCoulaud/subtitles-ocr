@@ -398,7 +398,7 @@ def test_color_stage_has_config_field() -> None:
 def test_event_cleanup_module_imports() -> None:
     from subtitles_ocr.pipeline import event_cleanup
 
-    assert event_cleanup.STAGE_VERSION == 1
+    assert event_cleanup.STAGE_VERSION == 2
 
 
 def test_cleaned_event_round_trip() -> None:

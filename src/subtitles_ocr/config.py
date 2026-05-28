@@ -169,6 +169,7 @@ class EventCleanupConfig(BaseModel):
     model: str | None = None
     parallelism: Annotated[int, NoCacheKey] = 4
     chunk_size: int = 100
+    modal_consensus_threshold: float = 0.8
 
 
 class NormalizeConfig(BaseModel):

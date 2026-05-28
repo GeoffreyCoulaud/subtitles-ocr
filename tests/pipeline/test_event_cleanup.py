@@ -246,3 +246,65 @@ def test_jsonl_written_with_one_line_per_event(
     assert items[0].skipped_llm is True
     assert items[1].event_id == 1
     assert items[1].cleaned_text == "ok"
+
+
+def test_modal_consensus_above_threshold_skips_llm(
+    tmp_workdir: Path, mock_globals: PipelineGlobals
+) -> None:
+    """When a single text covers >= modal_consensus_threshold of variants, the
+    LLM is skipped and the modal text is used directly.
+
+    Setup: 8/10 variants are "canonical"; 2 are noise. Default threshold 0.8.
+    8/10 = 0.8 >= 0.8 → skip.
+    """
+    variants = ["canonical"] * 8 + ["nois", "n0ise"]
+    _write_animation_json(tmp_workdir, [_make_event(0, variants)])
+    fake = FakeLlm()
+    stage = EventCleanupStage(llm=fake)
+    result = stage.run(mock_globals, EventCleanupConfig(model="m"))
+
+    assert len(fake.calls) == 0
+    assert result.items[0].cleaned_text == "canonical"
+    assert result.items[0].skipped_llm is True
+
+
+def test_modal_consensus_below_threshold_calls_llm(
+    tmp_workdir: Path, mock_globals: PipelineGlobals
+) -> None:
+    """5/10 = 0.5 < 0.8 → LLM must be called."""
+    variants = ["a"] * 5 + ["b"] * 5
+    _write_animation_json(tmp_workdir, [_make_event(0, variants)])
+    fake = FakeLlm(response_text="resolved")
+    stage = EventCleanupStage(llm=fake)
+    result = stage.run(mock_globals, EventCleanupConfig(model="m"))
+
+    assert len(fake.calls) == 1
+    assert result.items[0].cleaned_text == "resolved"
+    assert result.items[0].skipped_llm is False
+
+
+def test_modal_consensus_threshold_is_configurable(
+    tmp_workdir: Path, mock_globals: PipelineGlobals
+) -> None:
+    """Tightening the threshold to 0.95 makes an 8/10 consensus no longer
+    sufficient — LLM is called."""
+    variants = ["canonical"] * 8 + ["noise"] * 2
+    _write_animation_json(tmp_workdir, [_make_event(0, variants)])
+    fake = FakeLlm(response_text="resolved")
+    stage = EventCleanupStage(llm=fake)
+    cfg = EventCleanupConfig(model="m", modal_consensus_threshold=0.95)
+    result = stage.run(mock_globals, cfg)
+
+    assert len(fake.calls) == 1
+    assert result.items[0].cleaned_text == "resolved"
+
+
+def test_event_cleanup_config_default_modal_consensus_threshold() -> None:
+    """Documents the default threshold for the cache-invalidation contract."""
+    assert EventCleanupConfig().modal_consensus_threshold == 0.8
+
+
+def test_event_cleanup_stage_version_is_bumped_for_modal_consensus() -> None:
+    """Algorithm change invalidates Stage 10 cache."""
+    from subtitles_ocr.pipeline.event_cleanup import STAGE_VERSION
+    assert STAGE_VERSION == 2

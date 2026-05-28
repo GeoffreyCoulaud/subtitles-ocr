@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import ClassVar
@@ -18,7 +19,7 @@ from subtitles_ocr.pipeline.animation import AnimatedEvent, AnimationAnalysisRes
 
 logger = logging.getLogger(__name__)
 
-STAGE_VERSION: int = 1
+STAGE_VERSION: int = 2
 
 _STAGE_NAME = "10_event_cleanup"
 _LLM_HINT = "Check Ollama logs and --event-cleanup-model availability."
@@ -83,17 +84,22 @@ class EventCleanupStage:
             results: list[EventCleanupItem] = list(persisted)
 
             if remaining:
-                consensus_flags = [
-                    len(set(ev.raw_ocr_texts)) == 1 and len(ev.raw_ocr_texts) >= 1
-                    for ev in remaining
-                ]
+                def _modal_consensus(texts: list[str]) -> tuple[str, bool]:
+                    """Return (modal_text, is_consensus) — consensus is True when
+                    the most common variant covers ≥ threshold of all variants."""
+                    if not texts:
+                        return "", False
+                    mode_text, mode_count = Counter(texts).most_common(1)[0]
+                    return mode_text, (mode_count / len(texts)) >= config.modal_consensus_threshold
 
-                def process(args: tuple[AnimatedEvent, bool]) -> EventCleanupItem:
-                    ev, is_consensus = args
+                consensus_decisions = [_modal_consensus(ev.raw_ocr_texts) for ev in remaining]
+
+                def process(args: tuple[AnimatedEvent, tuple[str, bool]]) -> EventCleanupItem:
+                    ev, (modal_text, is_consensus) = args
                     if is_consensus:
                         return EventCleanupItem(
                             event_id=ev.event_id,
-                            cleaned_text=ev.raw_ocr_texts[0],
+                            cleaned_text=modal_text,
                             skipped_llm=True,
                         )
                     prompt = _build_prompt(ev)
@@ -111,7 +117,7 @@ class EventCleanupStage:
                         skipped_llm=False,
                     )
 
-                pairs = list(zip(remaining, consensus_flags, strict=True))
+                pairs = list(zip(remaining, consensus_decisions, strict=True))
                 with ThreadPoolExecutor(max_workers=max(1, config.parallelism)) as ex:
                     for item in ex.map(process, pairs):
                         writer.append(item)
