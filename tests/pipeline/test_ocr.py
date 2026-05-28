@@ -75,6 +75,37 @@ def test_ocr_stage_writes_one_jsonl_line_per_composed_frame(
     assert persisted[2].detections[0].text == "frame2"
 
 
+def test_short_text_detections_are_filtered_out(
+    tmp_workdir: Path, mock_globals
+) -> None:
+    composed = _composed_frames(1)
+    engine = FakeOcrEngine(
+        responses=[
+            [
+                OcrDetection(text="hello", confidence=0.9, quad=_quad()),
+                OcrDetection(text="x", confidence=0.9, quad=_quad()),
+                OcrDetection(text="ab", confidence=0.9, quad=_quad()),
+                OcrDetection(text="abc", confidence=0.9, quad=_quad()),
+                OcrDetection(text="  z ", confidence=0.9, quad=_quad()),
+            ]
+        ]
+    )
+
+    stage = OcrStage(ocr_engine=engine)
+    stage.run(
+        mock_globals,
+        OcrConfig(frame_processing=FrameProcessingConfig()),
+        composed_frames=iter(composed),
+    )
+
+    jsonl = tmp_workdir / "06_ocr" / "results.jsonl"
+    with JsonlWriter(jsonl, FrameOcrResult) as r:
+        persisted = list(r.iter_persisted())
+    assert len(persisted) == 1
+    texts = [d.text for d in persisted[0].detections]
+    assert texts == ["hello", "abc"]
+
+
 def test_ocr_stage_writes_sidecar_including_frame_processing_config(
     tmp_workdir: Path, mock_globals
 ) -> None:

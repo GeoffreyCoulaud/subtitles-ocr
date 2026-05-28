@@ -28,6 +28,14 @@ STAGE_NAME: str = "06_ocr"
 
 STAGE_VERSION: int = 1
 
+# PaddleOCR fires on background noise (compression blocks, edge artifacts) and
+# emits 1-2 character detections like "1", "B", "r" with low confidence. These
+# survive grouping as single-frame noise events and tank precision. Dropping
+# detections whose stripped text is ≤ 2 chars discards >99% of these without
+# meaningfully risking real subtitle text (subtitles ≤ 2 chars are vanishingly
+# rare in practice).
+_MIN_TEXT_LENGTH: int = 3
+
 
 class OcrDetection(BaseModel):
     text: str
@@ -112,7 +120,10 @@ class OcrStage:
                 if seen < skip:
                     seen += 1
                     continue
-                detections = self.ocr_engine.detect(cf.image)
+                detections = [
+                    d for d in self.ocr_engine.detect(cf.image)
+                    if len(d.text.strip()) >= _MIN_TEXT_LENGTH
+                ]
                 writer.append(
                     FrameOcrResult(
                         fansub_frame_idx=cf.fansub_frame_idx, detections=detections
