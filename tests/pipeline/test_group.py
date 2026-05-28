@@ -439,3 +439,90 @@ def test_single_aligned_gap_within_tolerance_keeps_trajectory(tmp_workdir: Path)
     assert ev.raw_ocr_texts == ["hi", "hi", "hi", "hi"]
     assert ev.raw_ocr_confidences == [0.9, 0.9, 0.9, 0.9]
     assert set(ev.quads_per_frame.keys()) == {0, 1, 3, 4}
+
+
+def test_gap_exceeding_max_finalizes_at_last_matched_plus_one(tmp_workdir: Path) -> None:
+    """With max_gap_frames=2, a 3-frame gap exceeds the budget and finalizes
+    the first trajectory at last_matched + 1 (NOT at the gap-closing frame).
+
+    Frames 0,1 match → 2,3,4 empty (3-frame gap) → 5,6 match same text+quad.
+    The first event ends at frame 2 (last_matched=1, +1=2). A new trajectory
+    starts at frame 5.
+    """
+    q = _quad(100, 800)
+    ocr_frames = [
+        FrameOcrResult(fansub_frame_idx=0, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=1, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=2, detections=[]),
+        FrameOcrResult(fansub_frame_idx=3, detections=[]),
+        FrameOcrResult(fansub_frame_idx=4, detections=[]),
+        FrameOcrResult(fansub_frame_idx=5, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=6, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+    ]
+    _setup_workdir(
+        tmp_workdir, fansub_total_frames=7,
+        segments=_all_aligned_segment(7), ocr_frames=ocr_frames,
+    )
+
+    cfg = GroupConfig(max_gap_frames=2)
+    stage = GroupStage()
+    result = stage.run(_globals_with(tmp_workdir, 7), cfg)
+
+    assert len(result.events) == 2
+    a, b = sorted(result.events, key=lambda e: e.fansub_frame_start)
+    assert (a.fansub_frame_start, a.fansub_frame_end) == (0, 2)
+    assert a.member_frame_indices == [0, 1]
+    assert (b.fansub_frame_start, b.fansub_frame_end) == (5, 7)
+    assert b.member_frame_indices == [5, 6]
+
+
+def test_gap_equal_to_max_keeps_trajectory(tmp_workdir: Path) -> None:
+    """With max_gap_frames=2, exactly 2 empty frames stay within the budget;
+    the trajectory survives. Boundary test against the > comparison."""
+    q = _quad(100, 800)
+    ocr_frames = [
+        FrameOcrResult(fansub_frame_idx=0, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=1, detections=[]),
+        FrameOcrResult(fansub_frame_idx=2, detections=[]),
+        FrameOcrResult(fansub_frame_idx=3, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+    ]
+    _setup_workdir(
+        tmp_workdir, fansub_total_frames=4,
+        segments=_all_aligned_segment(4), ocr_frames=ocr_frames,
+    )
+
+    cfg = GroupConfig(max_gap_frames=2)
+    stage = GroupStage()
+    result = stage.run(_globals_with(tmp_workdir, 4), cfg)
+
+    assert len(result.events) == 1
+    ev = result.events[0]
+    assert ev.fansub_frame_start == 0
+    assert ev.fansub_frame_end == 4
+    assert ev.member_frame_indices == [0, 3]
+
+
+def test_trajectory_with_trailing_gap_ends_at_last_matched_plus_one(tmp_workdir: Path) -> None:
+    """A trajectory whose last match is at frame K, followed by gap frames
+    that do not exceed max, then end-of-video → event ends at K+1, not at
+    fansub_total_frames."""
+    q = _quad(100, 800)
+    ocr_frames = [
+        FrameOcrResult(fansub_frame_idx=0, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=1, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=2, detections=[]),
+        FrameOcrResult(fansub_frame_idx=3, detections=[]),
+    ]
+    _setup_workdir(
+        tmp_workdir, fansub_total_frames=4,
+        segments=_all_aligned_segment(4), ocr_frames=ocr_frames,
+    )
+
+    stage = GroupStage()
+    result = stage.run(_globals_with(tmp_workdir, 4), GroupConfig())  # default max_gap_frames=60
+
+    assert len(result.events) == 1
+    ev = result.events[0]
+    assert ev.fansub_frame_start == 0
+    assert ev.fansub_frame_end == 2  # last_matched=1, +1=2; NOT fansub_total_frames=4
+    assert ev.member_frame_indices == [0, 1]
