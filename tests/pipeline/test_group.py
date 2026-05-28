@@ -526,3 +526,50 @@ def test_trajectory_with_trailing_gap_ends_at_last_matched_plus_one(tmp_workdir:
     assert ev.fansub_frame_start == 0
     assert ev.fansub_frame_end == 2  # last_matched=1, +1=2; NOT fansub_total_frames=4
     assert ev.member_frame_indices == [0, 1]
+
+
+def test_orphan_frames_do_not_consume_gap_budget(tmp_workdir: Path) -> None:
+    """ORPHAN frames are neutral: they don't match a trajectory and they don't
+    increment its stale counter. A gap composed entirely of ORPHAN frames
+    survives any max_gap_frames value, including 0.
+
+    Frames 0,1: ALIGNED, matched. Frames 2-10: ORPHAN. Frame 11: ALIGNED, matched.
+    With max_gap_frames=0 the trajectory still survives because ORPHANs don't
+    count.
+    """
+    q = _quad(100, 800)
+    ocr_frames = [
+        FrameOcrResult(fansub_frame_idx=0, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=1, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+        FrameOcrResult(fansub_frame_idx=11, detections=[OcrDetection(text="hi", confidence=0.9, quad=q)]),
+    ]
+    segments = [
+        AlignmentSegment(
+            fansub_frame_start=0, fansub_frame_end=2,
+            raw_frame_start=0, raw_frame_end=2,
+            offset_frames=0, status="ALIGNED", confidence_avg=1.0,
+        ),
+        AlignmentSegment(
+            fansub_frame_start=2, fansub_frame_end=11,
+            raw_frame_start=None, raw_frame_end=None,
+            offset_frames=None, status="ORPHAN", confidence_avg=None,
+        ),
+        AlignmentSegment(
+            fansub_frame_start=11, fansub_frame_end=12,
+            raw_frame_start=2, raw_frame_end=3,
+            offset_frames=-9, status="ALIGNED", confidence_avg=1.0,
+        ),
+    ]
+    _setup_workdir(
+        tmp_workdir, fansub_total_frames=12, segments=segments, ocr_frames=ocr_frames,
+    )
+
+    cfg = GroupConfig(max_gap_frames=0)
+    stage = GroupStage()
+    result = stage.run(_globals_with(tmp_workdir, 12), cfg)
+
+    assert len(result.events) == 1
+    ev = result.events[0]
+    assert ev.fansub_frame_start == 0
+    assert ev.fansub_frame_end == 12  # last_matched=11, +1=12
+    assert ev.member_frame_indices == [0, 1, 11]
