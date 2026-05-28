@@ -24,6 +24,10 @@ from subtitles_ocr.pipeline.frame_processing.compose import compose
 from subtitles_ocr.pipeline.frame_processing.diff import compute_diff
 from subtitles_ocr.pipeline.frame_processing.mask import make_mask
 
+
+class _DiffSink(Protocol):
+    def record(self, frame_idx: int, diff: np.ndarray) -> None: ...
+
 STAGE_VERSION: int = 1
 
 
@@ -108,6 +112,7 @@ def iter_composed_frames(
     start_at_fansub_idx: int = 0,
     *,
     frame_reader: FrameReader | None = None,
+    diff_sink: _DiffSink | None = None,
 ) -> Iterator[ComposedFrame]:
     reader = frame_reader if frame_reader is not None else _OpenCvFrameReader()
     debug = globals.debug_images
@@ -129,6 +134,8 @@ def iter_composed_frames(
             fansub_img = reader.read(globals.hardsub_path, fansub_idx)
             raw_img = reader.read(conformed_raw_path, raw_idx)
             diff = compute_diff(fansub_img, raw_img, config)
+            if diff_sink is not None:
+                diff_sink.record(fansub_idx, diff)
             mask = make_mask(diff, config)
             composed = compose(fansub_img, mask)
             if debug:

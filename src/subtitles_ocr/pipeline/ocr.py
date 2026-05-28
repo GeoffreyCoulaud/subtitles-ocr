@@ -23,6 +23,8 @@ from subtitles_ocr.pipeline.frame_processing import (
     ComposedFrame,
     iter_composed_frames,
 )
+from subtitles_ocr.pipeline.frame_processing.diff_intensity import DiffIntensityRecorder
+from subtitles_ocr.pipeline.frame_processing.iterator import FrameReader
 
 STAGE_NAME: str = "06_ocr"
 
@@ -64,9 +66,15 @@ class OcrStage:
         "debug_images",
     )
 
-    def __init__(self, ocr_engine: OcrEngine | None = None) -> None:
+    def __init__(
+        self,
+        ocr_engine: OcrEngine | None = None,
+        *,
+        frame_reader: FrameReader | None = None,
+    ) -> None:
         # Default deferred to keep imports light when only the class is needed.
         self.ocr_engine = ocr_engine
+        self.frame_reader = frame_reader
 
     def run(
         self,
@@ -106,13 +114,17 @@ class OcrStage:
                     if prev.detections:
                         frames_with_detections += 1
 
+            diff_recorder: DiffIntensityRecorder | None = None
             if composed_frames is None:
                 alignment_result = self._load_alignment(globals)
+                diff_recorder = DiffIntensityRecorder()
                 composed_frames = iter_composed_frames(
                     globals,
                     alignment_result,
                     frame_processing_config,
                     start_at_fansub_idx=0,
+                    frame_reader=self.frame_reader,
+                    diff_sink=diff_recorder,
                 )
 
             seen = 0
@@ -132,6 +144,9 @@ class OcrStage:
                 if detections:
                     frames_with_detections += 1
                 seen += 1
+
+        if diff_recorder is not None:
+            diff_recorder.save(out_dir / "diff_grid.npz")
 
         self._write_sidecar(
             globals=globals,

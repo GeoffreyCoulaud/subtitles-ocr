@@ -218,6 +218,61 @@ class _RecordingFrameReader:
         return self._frames[path][frame_idx]
 
 
+def test_iter_composed_frames_invokes_diff_sink_per_aligned_frame(mock_globals) -> None:
+    """When a ``diff_sink`` is passed, the iterator must call ``sink.record(idx, diff)``
+    once per ALIGNED fansub frame, with the actual diff array (so the OCR stage
+    can persist a sidecar for fade detection)."""
+    n_frames = 4
+    conformed_raw_path = mock_globals.workdir / "01_conform" / "raw.mkv"
+    rng = np.random.default_rng(0)
+    fansub_frames = [rng.integers(0, 256, (16, 16, 3), dtype=np.uint8) for _ in range(n_frames)]
+    raw_frames = [rng.integers(0, 256, (16, 16, 3), dtype=np.uint8) for _ in range(n_frames)]
+    reader = _FakeFrameReader(
+        {mock_globals.hardsub_path: fansub_frames, conformed_raw_path: raw_frames}
+    )
+    alignment = AlignmentResult(
+        fansub_total_frames=n_frames,
+        raw_total_frames=n_frames,
+        method_used="phash_only",
+        aligned_ratio=1.0,
+        orphan_ratio=0.0,
+        user_skipped_ratio=0.0,
+        segments=[
+            AlignmentSegment(
+                fansub_frame_start=0,
+                fansub_frame_end=n_frames,
+                raw_frame_start=0,
+                raw_frame_end=n_frames,
+                offset_frames=0,
+                status="ALIGNED",
+                confidence_avg=0.9,
+            )
+        ],
+        warnings=[],
+    )
+
+    class _CapturingSink:
+        def __init__(self) -> None:
+            self.calls: list[tuple[int, tuple[int, ...]]] = []
+
+        def record(self, frame_idx: int, diff: np.ndarray) -> None:
+            self.calls.append((frame_idx, diff.shape))
+
+    sink = _CapturingSink()
+    list(
+        iter_composed_frames(
+            mock_globals,
+            alignment,
+            FrameProcessingConfig(),
+            frame_reader=reader,
+            diff_sink=sink,
+        )
+    )
+    assert [c[0] for c in sink.calls] == [0, 1, 2, 3]
+    # Each diff has the same H×W as the input frames (no downsampling here).
+    assert all(c[1] == (16, 16) for c in sink.calls)
+
+
 def test_iter_composed_frames_reads_raw_from_conformed_workdir(mock_globals) -> None:
     """The iterator must read raw frames from the conformed mkv in the workdir
     (`01_conform/raw.mkv`), not from `globals.raw_path` which still points at

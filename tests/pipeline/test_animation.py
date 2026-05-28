@@ -96,6 +96,34 @@ class FakeDiffSource:
 # ---------------------------------------------------------------------------
 
 
+def test_run_auto_loads_persisted_diff_source_when_sidecar_exists(
+    mock_globals: PipelineGlobals,
+) -> None:
+    """When 06_ocr/diff_grid.npz exists, AnimationStage() (no diff_source
+    injected) must wire a PersistedDiffSource so fade detection runs."""
+    import numpy as np
+
+    from subtitles_ocr.pipeline.frame_processing.diff_intensity import (
+        DiffIntensityRecorder,
+        PersistedDiffSource,
+    )
+
+    # Write a minimal sidecar so the auto-load path activates.
+    rec = DiffIntensityRecorder(grid_size=16)
+    rec.record(frame_idx=20, diff=np.zeros((32, 32), dtype=np.float32))
+    sidecar = mock_globals.workdir / "06_ocr" / "diff_grid.npz"
+    rec.save(sidecar)
+
+    quads = {f: _quad_around(100, 50) for f in range(20, 30)}
+    ev = _make_event(event_id=0, start=20, end=30, quads=quads)
+    _write_group(mock_globals.workdir, [ev])
+
+    stage = AnimationStage()
+    assert stage.diff_source is None
+    stage.run(mock_globals, AnimationConfig())
+    assert isinstance(stage.diff_source, PersistedDiffSource)
+
+
 def test_static_event_passes_through_with_motion_none(
     mock_globals: PipelineGlobals,
 ) -> None:
@@ -127,7 +155,7 @@ def test_writes_animation_json_and_sidecar(mock_globals: PipelineGlobals) -> Non
     assert meta_path.exists()
     meta = BaseMeta.model_validate_json(meta_path.read_text())
     assert meta.stage_name == "08_animation"
-    assert meta.stage_version == 2
+    assert meta.stage_version == 3
 
 
 def test_resume_skips_when_sidecar_matches(mock_globals: PipelineGlobals) -> None:

@@ -75,6 +75,69 @@ def test_ocr_stage_writes_one_jsonl_line_per_composed_frame(
     assert persisted[2].detections[0].text == "frame2"
 
 
+def test_ocr_stage_writes_diff_grid_sidecar_in_prod_mode(
+    tmp_workdir: Path, mock_globals
+) -> None:
+    """In production mode (composed_frames not injected), the OCR stage must
+    write 06_ocr/diff_grid.npz so the animation stage can detect fades."""
+    import json
+
+    import numpy as np
+
+    from subtitles_ocr.pipeline.alignment.stage import AlignmentResult, AlignmentSegment
+
+    n_frames = 3
+    alignment = AlignmentResult(
+        fansub_total_frames=n_frames,
+        raw_total_frames=n_frames,
+        method_used="phash_only",
+        aligned_ratio=1.0,
+        orphan_ratio=0.0,
+        user_skipped_ratio=0.0,
+        segments=[
+            AlignmentSegment(
+                fansub_frame_start=0,
+                fansub_frame_end=n_frames,
+                raw_frame_start=0,
+                raw_frame_end=n_frames,
+                offset_frames=0,
+                status="ALIGNED",
+                confidence_avg=0.9,
+            )
+        ],
+        warnings=[],
+    )
+    align_dir = tmp_workdir / "02_alignment"
+    align_dir.mkdir(parents=True, exist_ok=True)
+    (align_dir / "alignment.json").write_text(alignment.model_dump_json())
+
+    rng = np.random.default_rng(7)
+    fansub_frames = [rng.integers(0, 256, (16, 16, 3), dtype=np.uint8) for _ in range(n_frames)]
+    raw_frames = [rng.integers(0, 256, (16, 16, 3), dtype=np.uint8) for _ in range(n_frames)]
+    conformed_raw = tmp_workdir / "01_conform" / "raw.mkv"
+
+    class _FakeFrameReader:
+        def __init__(self, frames_by_path):
+            self._frames = frames_by_path
+
+        def read(self, path: Path, frame_idx: int):
+            return self._frames[path][frame_idx]
+
+    reader = _FakeFrameReader(
+        {mock_globals.hardsub_path: fansub_frames, conformed_raw: raw_frames}
+    )
+
+    engine = FakeOcrEngine(responses=[[] for _ in range(n_frames)])
+    stage = OcrStage(ocr_engine=engine, frame_reader=reader)
+    stage.run(mock_globals, OcrConfig(frame_processing=FrameProcessingConfig()))
+
+    sidecar = tmp_workdir / "06_ocr" / "diff_grid.npz"
+    assert sidecar.exists()
+    data = np.load(sidecar)
+    assert data["grid"].shape == (n_frames, 16, 16)
+    assert data["frame_indices"].tolist() == [0, 1, 2]
+
+
 def test_short_text_detections_are_filtered_out(
     tmp_workdir: Path, mock_globals
 ) -> None:

@@ -37,7 +37,7 @@ from subtitles_ocr.timing import ms_to_frame
 
 logger = logging.getLogger(__name__)
 
-STAGE_VERSION: int = 2
+STAGE_VERSION: int = 3
 
 STAGE_NAME = "08_animation"
 
@@ -109,6 +109,20 @@ class AnimationStage:
     def run(
         self, globals: PipelineGlobals, config: AnimationConfig
     ) -> AnimationAnalysisResult:
+        # Lazy auto-load: in production the OCR stage writes a per-frame diff
+        # sidecar at 06_ocr/diff_grid.npz. If no caller injected a diff source
+        # and that sidecar exists, wire a PersistedDiffSource so fade detection
+        # runs. Tests that pre-inject a diff source (or that omit the sidecar)
+        # are unaffected.
+        if self.diff_source is None:
+            diff_sidecar = globals.workdir / "06_ocr" / "diff_grid.npz"
+            if diff_sidecar.exists():
+                from subtitles_ocr.pipeline.frame_processing.diff_intensity import (
+                    PersistedDiffSource,
+                )
+
+                self.diff_source = PersistedDiffSource(diff_sidecar)
+
         out_dir = globals.workdir / STAGE_NAME
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / "animation.json"
