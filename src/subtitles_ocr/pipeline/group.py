@@ -22,7 +22,7 @@ from subtitles_ocr.pipeline.ocr import FrameOcrResult, OcrDetection
 
 logger = logging.getLogger(__name__)
 
-STAGE_VERSION: int = 1
+STAGE_VERSION: int = 2
 
 _STAGE_NAME = "07_group"
 

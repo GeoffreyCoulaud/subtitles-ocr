@@ -138,6 +138,7 @@ class OcrConfig(BaseModel):
 class GroupConfig(BaseModel):
     text_levenshtein_max: float = 0.2
     quad_iou_min: float = 0.5
+    max_gap_frames: int = 60
 
 
 class AnimationConfig(BaseModel):

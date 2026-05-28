@@ -352,7 +352,7 @@ def test_writes_events_json_and_sidecar(tmp_workdir: Path) -> None:
     # The sidecar carries stage_name and stage_version.
     meta = json.loads(sidecar_path.read_text(encoding="utf-8"))
     assert meta["stage_name"] == "07_group"
-    assert meta["stage_version"] == 1
+    assert meta["stage_version"] == 2
 
 
 def test_resume_reuses_cached_output_when_sidecar_matches(tmp_workdir: Path) -> None:
@@ -386,3 +386,20 @@ def test_resume_reuses_cached_output_when_sidecar_matches(tmp_workdir: Path) -> 
     assert second.stats == {"resumed": True}
     # And confirm a recompute would have produced something different.
     assert first.fansub_total_frames == 2
+
+
+def test_group_config_exposes_max_gap_frames_default() -> None:
+    """GroupConfig ships with a max_gap_frames knob (default 60 frames, ~2.5 s @ 24fps).
+
+    Documents the cache-invalidating contract: changing this value must trigger
+    a re-run of Stage 7. Lives next to the other group thresholds.
+    """
+    cfg = GroupConfig()
+    assert cfg.max_gap_frames == 60
+
+
+def test_group_stage_version_is_bumped_for_gap_tolerance() -> None:
+    """Bumped from 1 to 2 to invalidate cached events.json produced by the
+    pre-gap-tolerance grouping logic."""
+    from subtitles_ocr.pipeline.group import STAGE_VERSION
+    assert STAGE_VERSION == 2
