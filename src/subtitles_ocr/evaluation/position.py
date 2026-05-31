@@ -1,121 +1,178 @@
-"""Position sub-score (ADR-0006 §5.8)."""
+"""Position pillar sub-scores (ADR-0008).
+
+Three independent axes inside the position pillar:
+
+- ``position`` — continuous score on the (x, y) distance between two effective
+  anchor points. Applies to every paired event. Cliff-linear similarity,
+  ``d_max = diagonal × 0.10``.
+- ``anchor`` — binary match on the resolved alignment direction (\\an).
+  Source-agnostic (inline \\an and ``Style.Alignment`` interchangeable).
+- ``intent`` — binary, asymmetric. Fires only when ref has an inline ``\\pos``
+  or ``\\move``; rewards output emitting any override (``\\pos`` or ``\\move``).
+  ``None`` otherwise, so the case "output adds a superfluous \\pos" is
+  unpunished (output added redundant information, ref had none to lose).
+
+``effective_anchor`` resolves an event to (points, alignment, source) using
+inline tags when present, falling back to the style's alignment + margins +
+``PlayResX/Y``.
+"""
 
 from __future__ import annotations
 
 import math
-import re
+from dataclasses import dataclass
+from typing import Literal
 
-from subtitles_ocr.evaluation._tags import ParsedEvent, parse_event_text
+import pysubs2
 
-
-_ANCHOR_OFFSET = {
-    1: (+0.5, -0.5),
-    2: (0.0, -0.5),
-    3: (-0.5, -0.5),
-    4: (+0.5, 0.0),
-    5: (0.0, 0.0),
-    6: (-0.5, 0.0),
-    7: (+0.5, +0.5),
-    8: (0.0, +0.5),
-    9: (-0.5, +0.5),
-}
-
-_LINE_BREAK = re.compile(r"\\[Nn]")
+from subtitles_ocr.evaluation._tags import parse_event_text
 
 
-def anchor_to_centre(
-    anchor: tuple[float, float],
-    an: int,
-    width: float,
-    height: float,
-) -> tuple[float, float]:
-    fx, fy = _ANCHOR_OFFSET[an]
-    return (anchor[0] + fx * width, anchor[1] + fy * height)
+Source = Literal["pos", "move", "style"]
 
 
-def _estimate_bbox(parsed: ParsedEvent, default_font_size: float) -> tuple[float, float]:
-    fs = parsed.font_size if parsed.font_size is not None else default_font_size
-    lines = _LINE_BREAK.split(parsed.plain_text)
-    max_chars = max((len(line) for line in lines), default=1)
-    width = fs * 0.55 * max_chars
-    height = fs * len(lines)
-    return (width, height)
+@dataclass(frozen=True)
+class EffectiveAnchor:
+    points: list[tuple[float, float]]
+    alignment: int
+    source: Source
 
 
-def _centre_for(
-    parsed: ParsedEvent,
-    default_font_size: float,
-    anchor_override: tuple[float, float] | None = None,
-) -> tuple[float, float] | None:
-    if anchor_override is None:
-        if parsed.pos is None:
-            return None
-        anchor = parsed.pos
-    else:
-        anchor = anchor_override
-    an = parsed.alignment if parsed.alignment is not None else 2
-    width, height = _estimate_bbox(parsed, default_font_size)
-    return anchor_to_centre(anchor, an, width, height)
+# ---------------------------------------------------------------------------
+# Resolution
+# ---------------------------------------------------------------------------
 
 
-def _score_distance(
-    a: tuple[float, float],
-    b: tuple[float, float],
+def _play_res(subs: pysubs2.SSAFile) -> tuple[int, int]:
+    info = subs.info if isinstance(subs.info, dict) else {}
+    try:
+        x = int(info.get("PlayResX", 1920))
+        y = int(info.get("PlayResY", 1080))
+        return (x, y)
+    except (TypeError, ValueError):
+        return (1920, 1080)
+
+
+def _anchor_from_style(
     play_res: tuple[int, int],
-) -> float:
-    dx = a[0] - b[0]
-    dy = a[1] - b[1]
-    distance = math.sqrt(dx * dx + dy * dy)
-    diag = math.sqrt(play_res[0] ** 2 + play_res[1] ** 2)
-    normalised = distance / diag if diag > 0 else 0.0
-    d_max = 0.10
-    return max(0.0, min(1.0, 1.0 - normalised / d_max))
+    alignment: int,
+    margin_l: float,
+    margin_r: float,
+    margin_v: float,
+) -> tuple[float, float]:
+    width, height = play_res
+    # Horizontal: 1/4/7 left, 2/5/8 centre, 3/6/9 right.
+    horiz = alignment % 3
+    if horiz == 1:  # left
+        x = margin_l
+    elif horiz == 0:  # right (3, 6, 9)
+        x = width - margin_r
+    else:  # centre (2, 5, 8)
+        x = (margin_l + (width - margin_r)) / 2.0
+    # Vertical: 1-3 bottom, 4-6 middle (margins ignored), 7-9 top.
+    if 1 <= alignment <= 3:
+        y = height - margin_v
+    elif 7 <= alignment <= 9:
+        y = margin_v
+    else:
+        y = height / 2.0
+    return (float(x), float(y))
+
+
+def effective_anchor(event: pysubs2.SSAEvent, subs: pysubs2.SSAFile) -> EffectiveAnchor:
+    parsed = parse_event_text(event.text)
+    style = subs.styles.get(event.style)
+    if style is None:
+        # Fall back to pysubs2's built-in Default if the named style is missing.
+        style = pysubs2.SSAStyle()
+    alignment = parsed.alignment if parsed.alignment is not None else int(style.alignment)
+    play_res = _play_res(subs)
+
+    if parsed.pos is not None:
+        return EffectiveAnchor(points=[parsed.pos], alignment=alignment, source="pos")
+    if parsed.move is not None:
+        m = parsed.move
+        return EffectiveAnchor(
+            points=[(m[0], m[1]), (m[2], m[3])],
+            alignment=alignment,
+            source="move",
+        )
+    point = _anchor_from_style(
+        play_res,
+        alignment,
+        float(style.marginl),
+        float(style.marginr),
+        float(style.marginv),
+    )
+    return EffectiveAnchor(points=[point], alignment=alignment, source="style")
+
+
+# ---------------------------------------------------------------------------
+# Pair scores
+# ---------------------------------------------------------------------------
+
+
+def _endpoint_pair(eff: EffectiveAnchor) -> tuple[tuple[float, float], tuple[float, float]]:
+    if len(eff.points) >= 2:
+        return eff.points[0], eff.points[1]
+    p = eff.points[0]
+    return p, p
+
+
+def _cliff(distance: float, diag: float) -> float:
+    if diag <= 0:
+        return 1.0 if distance == 0 else 0.0
+    d_max = diag * 0.10
+    return max(0.0, 1.0 - distance / d_max)
 
 
 def position_pair_score(
-    out_text: str,
-    ref_text: str,
+    out: EffectiveAnchor,
+    ref: EffectiveAnchor,
     play_res: tuple[int, int],
-    default_font_size: float,
-) -> float | None:
-    out = parse_event_text(out_text)
-    ref = parse_event_text(ref_text)
+) -> float:
+    out_start, out_end = _endpoint_pair(out)
+    ref_start, ref_end = _endpoint_pair(ref)
+    diag = math.hypot(play_res[0], play_res[1])
+    s_start = _cliff(math.hypot(out_start[0] - ref_start[0], out_start[1] - ref_start[1]), diag)
+    s_end = _cliff(math.hypot(out_end[0] - ref_end[0], out_end[1] - ref_end[1]), diag)
+    return (s_start + s_end) / 2.0
 
-    # \move case: compare endpoint centres
-    out_move = out.move
-    ref_move = ref.move
-    if out_move is not None or ref_move is not None:
-        if out_move is None or ref_move is None:
-            return 0.0
-        o_start_centre = _centre_for(out, default_font_size, anchor_override=(out_move[0], out_move[1]))
-        o_end_centre = _centre_for(out, default_font_size, anchor_override=(out_move[2], out_move[3]))
-        r_start_centre = _centre_for(ref, default_font_size, anchor_override=(ref_move[0], ref_move[1]))
-        r_end_centre = _centre_for(ref, default_font_size, anchor_override=(ref_move[2], ref_move[3]))
-        assert o_start_centre and o_end_centre and r_start_centre and r_end_centre
-        s_start = _score_distance(o_start_centre, r_start_centre, play_res)
-        s_end = _score_distance(o_end_centre, r_end_centre, play_res)
-        return (s_start + s_end) / 2.0
 
-    # \pos case: at least one side must specify \pos to enter the comparison
-    if out.pos is None and ref.pos is None:
+def anchor_pair_score(out: EffectiveAnchor, ref: EffectiveAnchor) -> float:
+    return 1.0 if out.alignment == ref.alignment else 0.0
+
+
+def intent_pair_score(out: EffectiveAnchor, ref: EffectiveAnchor) -> float | None:
+    if ref.source not in ("pos", "move"):
         return None
-    o_centre = _centre_for(out, default_font_size)
-    r_centre = _centre_for(ref, default_font_size)
-    if o_centre is None or r_centre is None:
-        return 0.0
-    return _score_distance(o_centre, r_centre, play_res)
+    return 1.0 if out.source in ("pos", "move") else 0.0
+
+
+# ---------------------------------------------------------------------------
+# Aggregates
+# ---------------------------------------------------------------------------
 
 
 def position_score(
-    pairs: list[tuple[str, str]],
+    pairs: list[tuple[EffectiveAnchor, EffectiveAnchor]],
     play_res: tuple[int, int],
-    default_font_size: float,
 ) -> float | None:
-    scored = [
-        s
-        for s in (position_pair_score(o, r, play_res, default_font_size) for o, r in pairs)
-        if s is not None
-    ]
+    if not pairs:
+        return None
+    scores = [position_pair_score(o, r, play_res) for o, r in pairs]
+    return sum(scores) / len(scores)
+
+
+def anchor_score(pairs: list[tuple[EffectiveAnchor, EffectiveAnchor]]) -> float | None:
+    if not pairs:
+        return None
+    scores = [anchor_pair_score(o, r) for o, r in pairs]
+    return sum(scores) / len(scores)
+
+
+def intent_score(pairs: list[tuple[EffectiveAnchor, EffectiveAnchor]]) -> float | None:
+    scored = [s for s in (intent_pair_score(o, r) for o, r in pairs) if s is not None]
     if not scored:
         return None
     return sum(scored) / len(scored)

@@ -153,7 +153,7 @@ uv run subtitles-ocr-evaluate \
   --fps 24000/1001
 ```
 
-The score is a 0-1 weighted sum of nine independent sub-scores: `text_plain`, `text_exact`, `timing`, `recall`, `precision`, `line_breaks`, `styling`, `position`, `fade`. Each is reported alongside its effective weight. See [ADR-0006](docs/ADR-0006-Subtitle-Output-Scoring.md) for the full specification.
+The score is a 0-1 weighted sum of eleven independent sub-scores: `text_plain`, `text_exact`, `timing`, `recall`, `precision`, `line_breaks`, `styling`, `position`, `anchor`, `intent`, `fade`. Each is reported alongside its effective weight. See [ADR-0006](docs/ADR-0006-Subtitle-Output-Scoring.md) for the original specification and [ADR-0008](docs/ADR-0008-Effective-Anchor-Scoring.md) for the position pillar's three-axis decomposition (replaces ADR-0006 §5.8).
 
 Pass `--json` for a machine-readable `ScoreReport`. Pass `--weights weights.json` to override the default integer weights (a JSON object matching the `Weights` Pydantic model).
 
@@ -168,4 +168,4 @@ Pass `--json` for a machine-readable `ScoreReport`. Pass `--weights weights.json
 - [ADR-0005 — normalize stage refactor (supersedes ADR-0002 §3 Stage 10)](docs/ADR-0005-Normalize-Stage-Refactor.md)
 - [ADR-0006 — subtitle output scoring](docs/ADR-0006-Subtitle-Output-Scoring.md)
 - [ADR-0007 — scoring optimization case study (KenIchi 0.68 → 0.91)](docs/ADR-0007-Scoring-Optimization-Kenichi.md)
-- [ADR-0008 — effective on-screen anchor scoring (stub, design pending)](docs/ADR-0008-Effective-Anchor-Scoring.md)
+- [ADR-0008 — effective on-screen anchor scoring (replaces ADR-0006 §5.8)](docs/ADR-0008-Effective-Anchor-Scoring.md)

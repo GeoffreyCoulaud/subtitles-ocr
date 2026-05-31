@@ -1,4 +1,4 @@
-"""Top-level score() orchestration (ADR-0006 §6, §7)."""
+"""Top-level score() orchestration (ADR-0006 §6, §7; ADR-0008)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,16 @@ import pysubs2
 from subtitles_ocr.evaluation.alignment import Cue, align_by_iou
 from subtitles_ocr.evaluation.fade import fade_pair_score, fade_score
 from subtitles_ocr.evaluation.line_breaks import line_breaks_pair_score, line_breaks_score
-from subtitles_ocr.evaluation.position import position_pair_score, position_score
+from subtitles_ocr.evaluation.position import (
+    EffectiveAnchor,
+    anchor_pair_score,
+    anchor_score,
+    effective_anchor,
+    intent_pair_score,
+    intent_score,
+    position_pair_score,
+    position_score,
+)
 from subtitles_ocr.evaluation.recall_precision import precision, recall
 from subtitles_ocr.evaluation.report import MatchedPair, ScoreReport, Weights
 from subtitles_ocr.evaluation.styling import styling_pair_score, styling_score
@@ -33,13 +42,6 @@ def _cue_of(event: pysubs2.SSAEvent) -> Cue:
     return Cue(start_s=event.start / 1000.0, end_s=event.end / 1000.0)
 
 
-def _default_font_size(subs: pysubs2.SSAFile, style_name: str) -> float:
-    style = subs.styles.get(style_name)
-    if style is None:
-        return 40.0
-    return float(style.fontsize)
-
-
 def _play_res(subs: pysubs2.SSAFile) -> tuple[int, int]:
     info = subs.info if isinstance(subs.info, dict) else {}
     try:
@@ -58,7 +60,7 @@ def score(
     K: int = 10,
 ) -> ScoreReport:
     ref_events, ref_subs = _load_dialogue(reference_path)
-    out_events, _out_subs = _load_dialogue(output_path)
+    out_events, out_subs = _load_dialogue(output_path)
 
     if not ref_events:
         raise ValueError("Reference .ass has no dialogue events; scoring is undefined.")
@@ -68,18 +70,25 @@ def score(
     alignment = align_by_iou(ref_cues, out_cues)
 
     play_res = _play_res(ref_subs)
-    default_fs = _default_font_size(ref_subs, ref_events[0].style)
+
+    # Pre-resolve effective anchors once per event.
+    ref_anchors: list[EffectiveAnchor] = [effective_anchor(e, ref_subs) for e in ref_events]
+    out_anchors: list[EffectiveAnchor] = [effective_anchor(e, out_subs) for e in out_events]
 
     text_pairs: list[tuple[str, str]] = []
     timing_pairs: list[tuple[Cue, Cue]] = []
+    anchor_pairs: list[tuple[EffectiveAnchor, EffectiveAnchor]] = []
     matched_pairs: list[MatchedPair] = []
     warnings: list[str] = []
 
     for ref_i, out_i, iou in alignment.pairs:
         ref_e = ref_events[ref_i]
         out_e = out_events[out_i]
+        out_eff = out_anchors[out_i]
+        ref_eff = ref_anchors[ref_i]
         text_pairs.append((out_e.text, ref_e.text))
         timing_pairs.append((_cue_of(out_e), _cue_of(ref_e)))
+        anchor_pairs.append((out_eff, ref_eff))
         matched_pairs.append(
             MatchedPair(
                 ref_index=ref_i,
@@ -90,7 +99,9 @@ def score(
                 timing=timing_pair_score(_cue_of(out_e), _cue_of(ref_e), fps=fps, K=K),
                 line_breaks=line_breaks_pair_score(out_e.text, ref_e.text),
                 styling=styling_pair_score(out_e.text, ref_e.text),
-                position=position_pair_score(out_e.text, ref_e.text, play_res, default_fs),
+                position=position_pair_score(out_eff, ref_eff, play_res),
+                anchor=anchor_pair_score(out_eff, ref_eff),
+                intent=intent_pair_score(out_eff, ref_eff),
                 fade=fade_pair_score(out_e.text, ref_e.text, fps=fps, K=K),
             )
         )
@@ -110,7 +121,9 @@ def score(
         "precision": precision(n_matched, n_out),
         "line_breaks": line_breaks_score(text_pairs),
         "styling": styling_score(text_pairs),
-        "position": position_score(text_pairs, play_res, default_fs),
+        "position": position_score(anchor_pairs, play_res),
+        "anchor": anchor_score(anchor_pairs),
+        "intent": intent_score(anchor_pairs),
         "fade": fade_score(text_pairs, fps=fps, K=K),
     }
 

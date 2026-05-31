@@ -204,6 +204,12 @@ Aggregation within a pair: arithmetic mean of the component scores that *both* s
 
 ### 5.8 `position`
 
+> **Superseded by [ADR-0008](ADR-0008-Effective-Anchor-Scoring.md).** The
+> single `position` sub-score described below is replaced by a three-axis
+> decomposition (`position` numeric, `anchor` alignment-direction match,
+> `intent` asymmetric override presence). The text below is preserved for
+> historical context only.
+
 What matters is **where the text actually sits in the frame**, not how it's encoded. Two cues using different anchor codes (`\an2` + `\pos(960, 1040)` vs `\an5` + a different `\pos`) can render at the same on-screen location. The comparison must resolve both sides to a common reference and compare those.
 
 **Resolution to a common reference.** For each cue, compute the **estimated rendered text centre** in PlayRes coordinates:

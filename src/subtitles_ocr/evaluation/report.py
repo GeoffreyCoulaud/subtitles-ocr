@@ -1,4 +1,4 @@
-"""Pydantic v2 data models for the scoring report (ADR-0006 §7.2)."""
+"""Pydantic v2 data models for the scoring report (ADR-0006 §7.2, ADR-0008)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,10 @@ class Weights(BaseModel):
     precision: int = Field(ge=0)
     line_breaks: int = Field(ge=0)
     styling: int = Field(ge=0)
+    # ADR-0008: position pillar split into three independent axes.
     position: int = Field(ge=0)
+    anchor: int = Field(ge=0)
+    intent: int = Field(ge=0)
     fade: int = Field(ge=0)
 
 
@@ -26,7 +29,9 @@ def default_weights() -> Weights:
         precision=10,
         line_breaks=5,
         styling=5,
-        position=5,
+        position=6,
+        anchor=3,
+        intent=1,
         fade=5,
     )
 
@@ -41,6 +46,8 @@ class MatchedPair(BaseModel):
     line_breaks: float
     styling: float | None = None
     position: float | None = None
+    anchor: float | None = None
+    intent: float | None = None
     fade: float | None = None
 
 
