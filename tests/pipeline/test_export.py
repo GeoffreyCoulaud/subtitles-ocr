@@ -266,6 +266,44 @@ def test_export_sign_event_has_pos_and_frz_tags(
     assert "\\frz" in line.text and "\\frz(" not in line.text
 
 
+def test_export_sign_style_uses_bottom_center_alignment(
+    mock_globals: PipelineGlobals,
+) -> None:
+    # Fansub convention: Sign styles default to alignment 2 (bottom-centre)
+    # so that the \pos coordinate marks the bottom-centre of the rendered
+    # text. Matches the resolved alignment ref uses for sign overlays.
+    ev = _make_event(0, _sign_quad())
+    anim = AnimationAnalysisResult(events=[ev], stats={})
+    colors = _make_colors((0, (255, 255, 255), (0, 0, 0), True))
+    doc = _make_doc((0, "Sign here"))
+    _write_inputs(mock_globals.workdir, anim, colors, doc)
+
+    result = ExportStage().run(mock_globals, ExportConfig())
+    subs = pysubs2.load(str(result.out_path_written))
+    sign_styles = [name for name in subs.styles if name.startswith("Sign-")]
+    assert sign_styles, "expected at least one Sign-* style"
+    for name in sign_styles:
+        assert int(subs.styles[name].alignment) == 2
+
+
+def test_export_sign_pos_at_bottom_center_of_quad(
+    mock_globals: PipelineGlobals,
+) -> None:
+    # With alignment=2, the \pos coordinate represents the bottom-centre of
+    # the rendered text. The pipeline emits it at the bottom-centre of the
+    # OCR quad so the rendered text lands where the OCR detected it.
+    ev = _make_event(0, _sign_quad())  # x range 200..400, y range 450..550
+    anim = AnimationAnalysisResult(events=[ev], stats={})
+    colors = _make_colors((0, (255, 255, 255), (0, 0, 0), True))
+    doc = _make_doc((0, "Sign here"))
+    _write_inputs(mock_globals.workdir, anim, colors, doc)
+
+    result = ExportStage().run(mock_globals, ExportConfig())
+    line = pysubs2.load(str(result.out_path_written))[0]
+    # cx = 300 (midpoint of 200..400), bottom y = 550.
+    assert "\\pos(300,550)" in line.text
+
+
 def test_export_sign_event_omits_frz_when_angle_below_threshold(
     mock_globals: PipelineGlobals,
 ) -> None:

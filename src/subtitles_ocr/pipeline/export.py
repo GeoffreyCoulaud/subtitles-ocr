@@ -511,8 +511,15 @@ def _build_ssa_file(
         # Inline tag order: position + rotation + animation + (colors NEVER inline)
         tag_parts: list[str] = []
         if position_class == "Sign":
-            cx, cy = _centroid(ev.quad_median)
-            tag_parts.append(f"\\pos({int(round(cx))},{int(round(cy))})")
+            # Style alignment is 2 (bottom-centre); the \pos coordinate marks
+            # the bottom-centre of the rendered text. Emit it at the bottom-
+            # centre of the OCR quad so the rendered text lands where it was
+            # detected.
+            xs = [p[0] for p in ev.quad_median]
+            ys = [p[1] for p in ev.quad_median]
+            cx = (min(xs) + max(xs)) / 2.0
+            by = float(max(ys))
+            tag_parts.append(f"\\pos({int(round(cx))},{int(round(by))})")
             # Rotation: only emitted on Sign-class events (mid-screen overlays
             # like in-frame signs and rotated annotations). Regular dialogue
             # OCR quads have sub-degree rotation noise that would create
@@ -574,9 +581,10 @@ def _canonical_colors_by_style(
 def _alignment_for(position: str) -> Alignment:
     if position == "Top":
         return Alignment.TOP_CENTER
-    if position == "Sign":
-        # \pos overrides alignment but pick something neutral (center).
-        return Alignment.MIDDLE_CENTER
+    # Bottom and Sign both use bottom-centre alignment. Fansub convention is
+    # alignment 2 for the entire stylesheet (including Sign styles); \pos
+    # then marks the bottom-centre of the rendered text, which is also the
+    # bottom-centre of the OCR quad — see `_pos_for_sign` below.
     return Alignment.BOTTOM_CENTER
 
 
