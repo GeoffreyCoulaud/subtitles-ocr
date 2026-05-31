@@ -168,3 +168,4 @@ Pass `--json` for a machine-readable `ScoreReport`. Pass `--weights weights.json
 - [ADR-0005 — normalize stage refactor (supersedes ADR-0002 §3 Stage 10)](docs/ADR-0005-Normalize-Stage-Refactor.md)
 - [ADR-0006 — subtitle output scoring](docs/ADR-0006-Subtitle-Output-Scoring.md)
 - [ADR-0007 — scoring optimization case study (KenIchi 0.68 → 0.91)](docs/ADR-0007-Scoring-Optimization-Kenichi.md)
+- [ADR-0008 — effective on-screen anchor scoring (stub, design pending)](docs/ADR-0008-Effective-Anchor-Scoring.md)
