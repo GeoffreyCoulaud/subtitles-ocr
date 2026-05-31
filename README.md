@@ -170,3 +170,4 @@ Pass `--json` for a machine-readable `ScoreReport`. Pass `--weights weights.json
 - [ADR-0007 — scoring optimization case study (KenIchi 0.68 → 0.91)](docs/ADR-0007-Scoring-Optimization-Kenichi.md)
 - [ADR-0008 — effective on-screen anchor scoring (replaces ADR-0006 §5.8)](docs/ADR-0008-Effective-Anchor-Scoring.md)
 - [ADR-0009 — data-driven font size from OCR quad height](docs/ADR-0009-Data-Driven-Font-Size.md)
+- [ADR-0010 — mask-alpha-based fade detection (replaces ADR-0003 §4.2 sub-stage B)](docs/ADR-0010-Mask-Alpha-Fade-Detection.md)

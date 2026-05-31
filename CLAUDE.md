@@ -17,6 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Code quality review is only required when the task produces executable logic** (functions, branches, conditionals). Skip it for dependency additions, doc-only edits, renames, and config-only changes.
 - **Implementer subagents must invoke `superpowers:test-driven-development` before writing any production code.** No production code without a failing test first. This applies to every task, every time.
 - **Code quality reviewers must not execute code.** Reviews are static: read the diff and the test files, identify every behavior and branch in the production code, and flag any that lack a corresponding test assertion. Running the test suite or print-only scripts is forbidden — that is the implementer's job.
+- **ADRs are written for a human reader, not a compiler.** Prefer plain prose to math symbols; spell out acronyms and jargon on first use (or skip them); use concrete examples over abstract formulae; explain *why* each decision is the right one, not just *what* it is. If a section reads like API documentation, rewrite it. The audience is someone reviewing the design decision in six months without the conversation context — they should be able to follow without a glossary.
 
 ## Commands
 
