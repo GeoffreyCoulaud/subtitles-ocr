@@ -197,10 +197,11 @@ class ExportConfig(BaseModel):
     # values below this are dominated by compression-artifact false
     # positives that survive the duration filter.
     min_event_mean_confidence: float = 0.85
-    # When True, animation-detected fade_in_ms / fade_out_ms is propagated to
-    # the exported \fad tag. The animation detector is noisy and produces many
-    # false positives that tank the fade sub-score on real material; the
-    # text-pattern title-overlay heuristic is more reliable.
+    # When True, animation-detected fade_in_ms / fade_out_ms is propagated
+    # to the exported \fad tag. Off by default because the detector's R²
+    # gate, even at the loosest workable setting (0.30), still emits many
+    # false positives at locations where ref has no \fad — the resulting
+    # noise drowns the few true matches in the fade sub-score.
     emit_animation_fades: bool = False
 
 

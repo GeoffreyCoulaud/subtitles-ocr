@@ -327,8 +327,9 @@ def test_export_fade_emits_fad_tag(mock_globals: PipelineGlobals) -> None:
     doc = _make_doc((0, "Faded"))
     _write_inputs(mock_globals.workdir, anim, colors, doc)
 
-    # `emit_animation_fades=True` opts back into the animation-driven \fad tag
-    # (off by default to suppress noisy false positives).
+    # `emit_animation_fades=True` opts into the animation-driven \fad tag
+    # (off by default because the detector R² gate still emits many false
+    # positives that drown true matches in the fade sub-score).
     result = ExportStage().run(
         mock_globals, ExportConfig(emit_animation_fades=True)
     )
