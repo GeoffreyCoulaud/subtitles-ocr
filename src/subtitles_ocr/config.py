@@ -150,8 +150,15 @@ class AnimationConfig(BaseModel):
     fade_search_window_ms: int = 1250
     min_fade_duration_ms: int = 125
     fade_duration_cap_ms: int = 1000
-    fade_score_fit_range: tuple[float, float] = (0.05, 0.95)
-    fade_fit_r2_threshold: float = 0.3
+    # ADR-0010: mask-alpha threshold-crossing fade detector.
+    # `min_in_event_alpha`: events whose median in-event mask coverage is
+    #   below this are treated as no-signal (broken OCR or no real subtitle).
+    #   Low default (0.10) so small overlays — episode titles, signs with
+    #   thin glyphs against a large bounding box — remain eligible.
+    # `fade_alpha_threshold`: fraction of the in-event reference at which
+    #   the "halfway crossing" of a fade is declared.
+    min_in_event_alpha: float = 0.10
+    fade_alpha_threshold: float = 0.5
 
 
 class ColorConfig(BaseModel):
@@ -197,14 +204,10 @@ class ExportConfig(BaseModel):
     # values below this are dominated by compression-artifact false
     # positives that survive the duration filter.
     min_event_mean_confidence: float = 0.85
-    # When True, animation-detected fade_in_ms / fade_out_ms is propagated
-    # to the exported \fad tag. Off by default: empirically the current
-    # R²-gated detector misses the true \fad events on overlays (ref
-    # episode titles / character intros) and only emits false positives,
-    # so no setting of this flag lifts the fade sub-score on real material.
-    # A better fade detector is the unblock; this flag stays as the
-    # plug-in point.
-    emit_animation_fades: bool = False
+    # When True (default), animation-detected fade_in_ms / fade_out_ms is
+    # propagated to the exported \fad tag. ADR-0010's mask-alpha detector
+    # finds real fade ramps; the flag stays as an escape hatch.
+    emit_animation_fades: bool = True
 
 
 class PipelineConfig(BaseModel):

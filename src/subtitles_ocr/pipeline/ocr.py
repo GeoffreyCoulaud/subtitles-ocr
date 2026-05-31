@@ -24,6 +24,7 @@ from subtitles_ocr.pipeline.frame_processing import (
     iter_composed_frames,
 )
 from subtitles_ocr.pipeline.frame_processing.diff_intensity import DiffIntensityRecorder
+from subtitles_ocr.pipeline.frame_processing.mask_presence import MaskPresenceRecorder
 from subtitles_ocr.pipeline.frame_processing.iterator import FrameReader
 
 STAGE_NAME: str = "06_ocr"
@@ -115,9 +116,11 @@ class OcrStage:
                         frames_with_detections += 1
 
             diff_recorder: DiffIntensityRecorder | None = None
+            mask_recorder: MaskPresenceRecorder | None = None
             if composed_frames is None:
                 alignment_result = self._load_alignment(globals)
                 diff_recorder = DiffIntensityRecorder()
+                mask_recorder = MaskPresenceRecorder()
                 composed_frames = iter_composed_frames(
                     globals,
                     alignment_result,
@@ -125,6 +128,7 @@ class OcrStage:
                     start_at_fansub_idx=0,
                     frame_reader=self.frame_reader,
                     diff_sink=diff_recorder,
+                    mask_sink=mask_recorder,
                 )
 
             seen = 0
@@ -147,6 +151,8 @@ class OcrStage:
 
         if diff_recorder is not None:
             diff_recorder.save(out_dir / "diff_grid.npz")
+        if mask_recorder is not None:
+            mask_recorder.save(out_dir / "mask_grid.npz")
 
         self._write_sidecar(
             globals=globals,

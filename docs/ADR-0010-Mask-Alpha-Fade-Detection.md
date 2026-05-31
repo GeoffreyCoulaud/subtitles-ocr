@@ -1,7 +1,7 @@
 # ADR-0010: Detecting fades from the subtitle mask
 
 Branch: `feat/subtitle-pixels-by-diff-with-raw`
-Status: Designed — implementation pending.
+Status: Implemented (signal source pivot pending — see §7.1).
 Revises: ADR-0003 §4.2 sub-stage B (the current fade detector).
 
 ## 1. What problem are we solving?
@@ -177,6 +177,49 @@ On the KenIchi episode, after this change:
 
 If the first run misses, the half-fade threshold (§5) is the one
 knob to try before considering deeper changes.
+
+### 7.1. Implementation outcome on KenIchi (empirical)
+
+The infrastructure was implemented per §4 and the inside-out
+half-fade-crossing algorithm was tuned defensively (require both an
+"alpha above threshold" run *and* a subsequent drop below threshold
+within the search window) to suppress false positives from
+back-to-back dialogue.
+
+The data observation that surfaced during validation: at the 16×16
+grid resolution on this 640×480 conformed video, **the mask is
+saturated** at ~99 % coverage across 99 % of frames. The diff between
+the fansub and the BluRay raw is high enough almost everywhere that
+the hysteresis mask passes the whole-frame component, which in turn
+fits below `mask_area_max = 500_000` for this resolution and is kept.
+
+Net consequences:
+
+- Real fade ramps are invisible in the mask grid because the
+  baseline is already saturated.
+- The defensive "observed drop" gate works: no false positives
+  emitted on dialogue.
+- `fade` sub-score remains 0.000 on KenIchi.
+- `timing` lifts 0.956 → 0.983 — the previous detector's spurious
+  fades extended event boundaries; the new strict-by-default
+  detector emits ≤ 1 fade per episode and stops corrupting timing.
+- Final score 0.8895 → 0.8964 (+0.007).
+
+So the *algorithm* is right (it correctly emits nothing when the
+signal is not there) but the *signal source* (the binary mask at
+the chosen grid resolution) isn't actually usable on this material.
+Two follow-ups are open:
+
+1. **Pivot the signal to diff intensity.** The
+   `06_ocr/diff_grid.npz` sidecar is already populated with much
+   higher contrast (mean 3.1, max 207 on the same KenIchi frames).
+   The threshold-crossing algorithm transposes directly — replace
+   `mask_alpha` with normalised diff intensity relative to an
+   in-event reference. This is the most likely next step.
+2. **Adapt `mask_area_max` to the actual conformed resolution** so
+   the whole-frame component is rejected even on smaller-resolution
+   conformed videos. Independent of fade detection but would also
+   make the mask more selective.
 
 ## 8. Out of scope
 

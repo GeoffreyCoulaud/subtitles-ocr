@@ -74,21 +74,23 @@ def _write_group(workdir: Path, events: list[SubtitleEvent], total_frames: int =
     (workdir / "07_group" / "events.json").write_text(payload.model_dump_json())
 
 
-class FakeDiffSource:
-    """Scripted diff intensity for fade tests.
+class FakeMaskSource:
+    """Scripted per-frame mask coverage for ADR-0010 fade tests.
 
-    `scores[frame_idx]` returns the value; missing frames return 0.0. The bbox
-    is ignored — tests don't exercise per-bbox geometry from the source, only
-    the temporal scoring path.
+    ``alphas[frame_idx]`` is the mask-coverage fraction (0..1) the source
+    returns; missing frames default to 0.0. The bbox is ignored for the
+    return value — tests don't exercise per-bbox geometry from the source —
+    but every call is recorded so tests can inspect which (frame, bbox)
+    pairs the detector queried.
     """
 
-    def __init__(self, scores: dict[int, float]) -> None:
-        self.scores = scores
+    def __init__(self, alphas: dict[int, float]) -> None:
+        self.alphas = alphas
         self.calls: list[tuple[int, tuple[int, int, int, int]]] = []
 
-    def mean_intensity(self, frame_idx: int, bbox: tuple[int, int, int, int]) -> float:
+    def mask_alpha(self, frame_idx: int, bbox: tuple[int, int, int, int]) -> float:
         self.calls.append((frame_idx, bbox))
-        return self.scores.get(frame_idx, 0.0)
+        return self.alphas.get(frame_idx, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -96,22 +98,22 @@ class FakeDiffSource:
 # ---------------------------------------------------------------------------
 
 
-def test_run_auto_loads_persisted_diff_source_when_sidecar_exists(
+def test_run_auto_loads_persisted_mask_source_when_sidecar_exists(
     mock_globals: PipelineGlobals,
 ) -> None:
-    """When 06_ocr/diff_grid.npz exists, AnimationStage() (no diff_source
-    injected) must wire a PersistedDiffSource so fade detection runs."""
+    """When 06_ocr/mask_grid.npz exists, AnimationStage() (no mask_source
+    injected) must wire a PersistedMaskSource so fade detection runs."""
     import numpy as np
 
-    from subtitles_ocr.pipeline.frame_processing.diff_intensity import (
-        DiffIntensityRecorder,
-        PersistedDiffSource,
+    from subtitles_ocr.pipeline.frame_processing.mask_presence import (
+        MaskPresenceRecorder,
+        PersistedMaskSource,
     )
 
     # Write a minimal sidecar so the auto-load path activates.
-    rec = DiffIntensityRecorder(grid_size=16)
-    rec.record(frame_idx=20, diff=np.zeros((32, 32), dtype=np.float32))
-    sidecar = mock_globals.workdir / "06_ocr" / "diff_grid.npz"
+    rec = MaskPresenceRecorder(grid_size=16)
+    rec.record(frame_idx=20, mask=np.zeros((32, 32), dtype=np.uint8))
+    sidecar = mock_globals.workdir / "06_ocr" / "mask_grid.npz"
     rec.save(sidecar)
 
     quads = {f: _quad_around(100, 50) for f in range(20, 30)}
@@ -119,9 +121,9 @@ def test_run_auto_loads_persisted_diff_source_when_sidecar_exists(
     _write_group(mock_globals.workdir, [ev])
 
     stage = AnimationStage()
-    assert stage.diff_source is None
+    assert stage.mask_source is None
     stage.run(mock_globals, AnimationConfig())
-    assert isinstance(stage.diff_source, PersistedDiffSource)
+    assert isinstance(stage.mask_source, PersistedMaskSource)
 
 
 def test_static_event_passes_through_with_motion_none(
@@ -155,7 +157,7 @@ def test_writes_animation_json_and_sidecar(mock_globals: PipelineGlobals) -> Non
     assert meta_path.exists()
     meta = BaseMeta.model_validate_json(meta_path.read_text())
     assert meta.stage_name == "08_animation"
-    assert meta.stage_version == 4
+    assert meta.stage_version == 5
 
 
 def test_resume_skips_when_sidecar_matches(mock_globals: PipelineGlobals) -> None:
@@ -356,11 +358,11 @@ def test_inter_event_merge_with_bad_r2_merges_static_flagged(
 
 
 # ---------------------------------------------------------------------------
-# B — Fade detection
+# B — Fade detection (ADR-0010 mask-alpha threshold crossing)
 # ---------------------------------------------------------------------------
 
 
-def _linear_ramp_scores(
+def _linear_ramp_alpha(
     start_frame: int,
     end_frame: int,
     *,
@@ -369,77 +371,43 @@ def _linear_ramp_scores(
     pre_window: int = 0,
     post_window: int = 0,
 ) -> dict[int, float]:
-    """Build scripted score dict for a synthetic fade test.
+    """Build a scripted mask-alpha curve for synthetic fade tests.
 
-    Score = 1 inside [start, end]. Linear ramp from 0 to 1 across the
-    fade_in_frames before start. Linear ramp from 1 to 0 across the
-    fade_out_frames after end.
+    - In-event ``[start, end)``: alpha = 1.0 (the median reference)
+    - Pre-window: linear ramp from 0 → 1 over ``fade_in_frames`` ending at
+      ``start - 1``. Frames further back than that pad to 0.
+    - Post-window: linear ramp from 1 → 0 over ``fade_out_frames`` starting
+      at ``end``. Frames further forward pad to 0.
     """
-    scores: dict[int, float] = {}
-    # In-event: 1.0
+    alphas: dict[int, float] = {}
     for f in range(start_frame, end_frame):
-        scores[f] = 1.0
-    # Fade-in
+        alphas[f] = 1.0
     for k in range(1, fade_in_frames + 1):
-        scores[start_frame - k] = max(0.0, 1.0 - k / fade_in_frames)
-    # Fade-out
+        alphas[start_frame - k] = max(0.0, 1.0 - k / fade_in_frames)
     for k in range(1, fade_out_frames + 1):
-        scores[end_frame - 1 + k] = max(0.0, 1.0 - k / fade_out_frames)
-    # Pre-window / post-window padding to score 0
+        alphas[end_frame - 1 + k] = max(0.0, 1.0 - k / fade_out_frames)
     for k in range(fade_in_frames + 1, fade_in_frames + 1 + pre_window):
-        scores.setdefault(start_frame - k, 0.0)
+        alphas.setdefault(start_frame - k, 0.0)
     for k in range(fade_out_frames + 1, fade_out_frames + 1 + post_window):
-        scores.setdefault(end_frame - 1 + k, 0.0)
-    return scores
-
-
-def test_fade_in_detected_above_high_noise_floor(mock_globals: PipelineGlobals) -> None:
-    """Background subtraction must enable fade detection when the diff has a
-    noise floor close to the anchor (e.g., CRF / master mismatch between the
-    fansub and the raw video, where every pixel differs slightly even with
-    no subtitle present)."""
-    quads = {f: _quad_around(100, 50) for f in range(30, 50)}
-    ev = _make_event(event_id=0, start=30, end=50, quads=quads)
-    _write_group(mock_globals.workdir, [ev])
-
-    anchor = 1.0
-    background = 0.88  # 88% noise floor (matches observed Kenichi values)
-    fade_in_frames = 6  # 250ms @ 24fps
-
-    scores: dict[int, float] = {f: anchor for f in range(30, 50)}
-    # All pre-window frames sit at the noise floor by default (as they would
-    # on any real video where the fansub and raw differ everywhere).
-    for f in range(0, 30):
-        scores[f] = background
-    # Linear fade-in overrides the last fade_in_frames of the pre-window.
-    for k in range(1, fade_in_frames + 1):
-        frac = 1.0 - k / fade_in_frames
-        scores[30 - k] = background + frac * (anchor - background)
-
-    src = FakeDiffSource(scores)
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
-
-    out = result.events[0]
-    assert out.fade_in_ms >= 125
-    assert out.fansub_frame_start < 30
+        alphas.setdefault(end_frame - 1 + k, 0.0)
+    return alphas
 
 
 def test_fade_in_only(mock_globals: PipelineGlobals) -> None:
-    # Static event from 30-50; 6-frame linear fade-in before frame 30 ≈ 250ms@24fps
+    # 6-frame linear ramp before frame 30. Half-fade crossing at frame 27
+    # (alpha = 3/6 = 0.5). fade_in_ms = (30 - 27) × ms_per_frame × 2 ≈ 250ms.
     quads = {f: _quad_around(100, 50) for f in range(30, 50)}
     ev = _make_event(event_id=0, start=30, end=50, quads=quads)
     _write_group(mock_globals.workdir, [ev])
 
-    scores = _linear_ramp_scores(30, 50, fade_in_frames=6, pre_window=5)
-    src = FakeDiffSource(scores)
-
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+    alphas = _linear_ramp_alpha(30, 50, fade_in_frames=6, pre_window=5)
+    src = FakeMaskSource(alphas)
+    result = AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
 
     out = result.events[0]
-    assert out.fade_in_ms >= 125
+    assert out.fade_in_ms == pytest.approx(250, abs=42)  # within one frame at 24fps
     assert out.fade_out_ms == 0
-    # Extended start moves earlier
-    assert out.fansub_frame_start < 30
+    assert out.fansub_frame_start < 30  # extended to cover the ramp
 
 
 def test_fade_out_only(mock_globals: PipelineGlobals) -> None:
@@ -447,14 +415,13 @@ def test_fade_out_only(mock_globals: PipelineGlobals) -> None:
     ev = _make_event(event_id=0, start=30, end=50, quads=quads)
     _write_group(mock_globals.workdir, [ev])
 
-    scores = _linear_ramp_scores(30, 50, fade_out_frames=6, post_window=5)
-    src = FakeDiffSource(scores)
-
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+    alphas = _linear_ramp_alpha(30, 50, fade_out_frames=6, post_window=5)
+    src = FakeMaskSource(alphas)
+    result = AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
 
     out = result.events[0]
     assert out.fade_in_ms == 0
-    assert out.fade_out_ms >= 125
+    assert out.fade_out_ms == pytest.approx(250, abs=42)
     assert out.fansub_frame_end > 50
 
 
@@ -463,66 +430,45 @@ def test_full_fade(mock_globals: PipelineGlobals) -> None:
     ev = _make_event(event_id=0, start=30, end=80, quads=quads)
     _write_group(mock_globals.workdir, [ev])
 
-    scores = _linear_ramp_scores(
+    alphas = _linear_ramp_alpha(
         30, 80, fade_in_frames=6, fade_out_frames=6, pre_window=5, post_window=5
     )
-    src = FakeDiffSource(scores)
-
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+    src = FakeMaskSource(alphas)
+    result = AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
 
     out = result.events[0]
-    assert out.fade_in_ms >= 125
-    assert out.fade_out_ms >= 125
+    assert out.fade_in_ms == pytest.approx(250, abs=42)
+    assert out.fade_out_ms == pytest.approx(250, abs=42)
 
 
-def test_fade_with_bad_r2_reverts_to_zero(mock_globals: PipelineGlobals) -> None:
+def test_fade_extracted_below_min_reverts(mock_globals: PipelineGlobals) -> None:
+    # 2-frame ramp → half-crossing at frame 29 (alpha = 0.5).
+    # fade_in_ms = 1 × ms_per_frame × 2 ≈ 83 ms < min 125 ms → 0.
     quads = {f: _quad_around(100, 50) for f in range(30, 50)}
     ev = _make_event(event_id=0, start=30, end=50, quads=quads)
     _write_group(mock_globals.workdir, [ev])
 
-    # Noisy scores in the [0.05, 0.95] band with no linear structure
-    scores = {f: 1.0 for f in range(30, 50)}
-    for k, f in enumerate(range(20, 30)):
-        scores[f] = 0.5 if k % 2 == 0 else 0.7  # noise, no linear trend
-    src = FakeDiffSource(scores)
-
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
-
-    out = result.events[0]
-    assert out.fade_in_ms == 0
-
-
-def test_fade_extrapolated_below_min_reverts(mock_globals: PipelineGlobals) -> None:
-    # A 2-frame fade-in ≈ 83ms@24fps < MIN_FADE_DURATION_MS (125)
-    quads = {f: _quad_around(100, 50) for f in range(30, 50)}
-    ev = _make_event(event_id=0, start=30, end=50, quads=quads)
-    _write_group(mock_globals.workdir, [ev])
-
-    scores = _linear_ramp_scores(30, 50, fade_in_frames=2, pre_window=5)
-    src = FakeDiffSource(scores)
-
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+    alphas = _linear_ramp_alpha(30, 50, fade_in_frames=2, pre_window=5)
+    src = FakeMaskSource(alphas)
+    result = AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
 
     assert result.events[0].fade_in_ms == 0
 
 
-def test_fade_extrapolated_above_cap_reverts(mock_globals: PipelineGlobals) -> None:
-    # Ramp spans > 1000ms (≈ 30 frames @ 24fps); use 28 obs frames
+def test_fade_extracted_above_cap_reverts(mock_globals: PipelineGlobals) -> None:
+    # Pre-window stays at alpha ≈ 1.0 throughout — the threshold crossing
+    # falls at the very edge of the search window, giving a fade duration
+    # above the 1000 ms cap → revert to 0.
     quads = {f: _quad_around(100, 50) for f in range(80, 100)}
     ev = _make_event(event_id=0, start=80, end=100, quads=quads)
     _write_group(mock_globals.workdir, [ev])
 
-    # 60-frame fade-in: extrapolated t = 60 frames * 41.67ms ≈ 2500ms >> 1000ms cap
-    # but FADE_SEARCH_WINDOW_MS=1250 → W = 30 frames; so we must observe within window.
-    # Construct a *very* shallow slope so extrapolation reaches 0 way past the cap:
-    # observations of slope -0.01 per frame inside the window.
-    scores = {f: 1.0 for f in range(80, 100)}
-    # 28 observations in [0.05, 0.95] band, very flat
-    for k in range(1, 29):
-        scores[80 - k] = max(0.05, 1.0 - 0.02 * k)  # at k=28: 0.44
-    src = FakeDiffSource(scores)
-
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+    # Search window at 24fps is ms_to_frame(1250) = 30 frames.
+    # Fill the whole pre-window with alpha = 1.0 → crossing at the farthest
+    # frame → fade_in_ms = 30 × 2 × 41.67 ≈ 2500 ms > 1000 ms cap → 0.
+    alphas: dict[int, float] = {f: 1.0 for f in range(50, 100)}
+    src = FakeMaskSource(alphas)
+    result = AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
 
     assert result.events[0].fade_in_ms == 0
 
@@ -530,16 +476,17 @@ def test_fade_extrapolated_above_cap_reverts(mock_globals: PipelineGlobals) -> N
 def test_partial_fade_sum_exceeds_duration_reverts_both(
     mock_globals: PipelineGlobals,
 ) -> None:
-    # Short event (10 frames ≈ 417ms) with detected fades that sum to > 417ms
+    # Short 10-frame event ≈ 417 ms. 8-frame ramps on both sides give
+    # ~333 ms each → sum 666 ms > 417 ms → revert both.
     quads = {f: _quad_around(100, 50) for f in range(40, 50)}
     ev = _make_event(event_id=0, start=40, end=50, quads=quads)
     _write_group(mock_globals.workdir, [ev])
 
-    # Fade-in of 8 frames + fade-out of 8 frames → 16 frames > 10 duration
-    scores = _linear_ramp_scores(40, 50, fade_in_frames=8, fade_out_frames=8, pre_window=5, post_window=5)
-    src = FakeDiffSource(scores)
-
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+    alphas = _linear_ramp_alpha(
+        40, 50, fade_in_frames=8, fade_out_frames=8, pre_window=5, post_window=5
+    )
+    src = FakeMaskSource(alphas)
+    result = AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
 
     out = result.events[0]
     assert out.fade_in_ms == 0
@@ -547,17 +494,18 @@ def test_partial_fade_sum_exceeds_duration_reverts_both(
 
 
 def test_fade_skipped_for_nonlinear_flagged(mock_globals: PipelineGlobals) -> None:
-    # Build a nonlinear-flagged event AND provide scores that would otherwise
+    # Build a nonlinear-flagged event AND provide alphas that would otherwise
     # detect a fade. Stage must skip fade detection.
     centroids = [100 + k * 10 + (50 if k % 2 == 0 else -50) for k in range(20)]
     quads = {10 + k: _quad_around(cx, 50) for k, cx in enumerate(centroids)}
     ev = _make_event(event_id=0, start=10, end=30, quads=quads)
     _write_group(mock_globals.workdir, [ev])
 
-    scores = _linear_ramp_scores(10, 30, fade_in_frames=6, fade_out_frames=6, pre_window=5, post_window=5)
-    src = FakeDiffSource(scores)
-
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
+    alphas = _linear_ramp_alpha(
+        10, 30, fade_in_frames=6, fade_out_frames=6, pre_window=5, post_window=5
+    )
+    src = FakeMaskSource(alphas)
+    result = AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
 
     out = result.events[0]
     assert out.motion is not None and out.motion["type"] == "nonlinear_flagged"
@@ -568,27 +516,24 @@ def test_fade_skipped_for_nonlinear_flagged(mock_globals: PipelineGlobals) -> No
 def test_fade_for_linear_moving_event_uses_extrapolated_bbox(
     mock_globals: PipelineGlobals,
 ) -> None:
-    # Linear-moving event from cx=100 to cx=290 across frames 10-30.
-    # If the bbox follows the trajectory in the pre-window, the source should
-    # be queried with bboxes whose x shifts frame-to-frame.
+    # Linear-moving event from cx=100 to cx=290 across frames 10-30. The
+    # bbox tracked by fade detection should follow the trajectory in the
+    # pre-window, so the source sees different bbox x's per frame.
     quads = {f: _quad_around(100 + (f - 10) * 10, 50) for f in range(10, 30)}
     ev = _make_event(event_id=0, start=10, end=30, quads=quads)
     _write_group(mock_globals.workdir, [ev])
 
-    scores = _linear_ramp_scores(10, 30, fade_in_frames=6, pre_window=5)
-    src = FakeDiffSource(scores)
+    alphas = _linear_ramp_alpha(10, 30, fade_in_frames=6, pre_window=5)
+    src = FakeMaskSource(alphas)
+    AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
 
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
-
-    # Filter to only the pre-window calls (frames < 10)
     pre_calls = [(f, bbox) for (f, bbox) in src.calls if f < 10]
     assert len(pre_calls) > 0
-    # Bbox cx must differ across pre-window frames (trajectory is extrapolated)
     xs = sorted({(bbox[0] + bbox[2]) / 2 for (_, bbox) in pre_calls})
     assert len(xs) > 1
 
 
-def test_fade_detection_silent_without_diff_source(
+def test_fade_detection_silent_without_mask_source(
     mock_globals: PipelineGlobals,
 ) -> None:
     quads = {f: _quad_around(100, 50) for f in range(30, 50)}
@@ -601,28 +546,46 @@ def test_fade_detection_silent_without_diff_source(
     assert result.events[0].fade_out_ms == 0
 
 
+def test_fade_skipped_when_in_event_alpha_below_min(
+    mock_globals: PipelineGlobals,
+) -> None:
+    # Median in-event alpha well below `min_in_event_alpha` (0.10) →
+    # treat as no-signal, leave fade at 0 even if the pre-window has
+    # a clean threshold crossing.
+    quads = {f: _quad_around(100, 50) for f in range(30, 50)}
+    ev = _make_event(event_id=0, start=30, end=50, quads=quads)
+    _write_group(mock_globals.workdir, [ev])
+
+    alphas = {f: 0.05 for f in range(30, 50)}  # 5 % coverage in-event
+    # Pre-window crosses the (very low) "threshold" 0.5 × 0.05 = 0.025.
+    for k in range(1, 7):
+        alphas[30 - k] = max(0.0, 0.05 - 0.01 * k)
+    src = FakeMaskSource(alphas)
+    result = AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
+
+    assert result.events[0].fade_in_ms == 0
+    assert result.events[0].fade_out_ms == 0
+
+
 def test_fade_search_window_excludes_other_event_frames(
     mock_globals: PipelineGlobals,
 ) -> None:
-    # Two adjacent events: ev0 ends at 25, ev1 starts at 30.
-    # Fade-in search for ev1 must not score frames 20-24 (claimed by ev0).
+    # Two adjacent events: ev0 ends at 25, ev1 starts at 30. Fade-in
+    # detection for ev1 must skip frames 20-24 (occupied by ev0).
     quads0 = {f: _quad_around(50, 50) for f in range(20, 25)}
     quads1 = {f: _quad_around(200, 100) for f in range(30, 50)}
     ev0 = _make_event(event_id=0, start=20, end=25, quads=quads0, texts=["a"] * 5)
     ev1 = _make_event(event_id=1, start=30, end=50, quads=quads1, texts=["b"] * 20)
     _write_group(mock_globals.workdir, [ev0, ev1])
 
-    scores = _linear_ramp_scores(30, 50, fade_in_frames=4, pre_window=15)
-    src = FakeDiffSource(scores)
+    alphas = _linear_ramp_alpha(30, 50, fade_in_frames=4, pre_window=15)
+    src = FakeMaskSource(alphas)
+    AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
 
-    AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
-
-    # ev1 is centered at cy=100, ev0 at cy=50. Filter ev1-side calls (bbox y_min >= 90)
-    # in the frame range owned by ev0 (20-24). Must be empty.
+    # ev1 is centered at cy=100, ev0 at cy=50. Calls in frames 20-24 with
+    # bbox aligned to ev1's row must be empty (those frames are occupied).
     ev1_pre_calls = [
-        f
-        for (f, bbox) in src.calls
-        if 20 <= f < 25 and bbox[1] >= 90
+        f for (f, bbox) in src.calls if 20 <= f < 25 and bbox[1] >= 90
     ]
     assert ev1_pre_calls == []
 
@@ -655,165 +618,25 @@ def test_inter_event_merge_gap_zero_merges(mock_globals: PipelineGlobals) -> Non
 
 
 # ---------------------------------------------------------------------------
-# B — fade-out anchor frame boundary
-# ---------------------------------------------------------------------------
-
-
-def test_fade_out_post_window_starts_at_fansub_frame_end_not_before(
-    mock_globals: PipelineGlobals,
-) -> None:
-    """Verify that the fade-out observation window is [fansub_frame_end, end+W).
-
-    The frame ``fansub_frame_end - 1`` is the last in-event frame and must NOT
-    appear as a post-window observation (it is used as the mathematical x-anchor
-    of the constrained fit, but is never scored by the source in that role).
-    The frame ``fansub_frame_end`` IS the first post-window frame and must be
-    queried.
-
-    We verify this by giving frame ``fansub_frame_end - 1`` a score that would
-    corrupt the fit if included in the post-window observations, while giving
-    the actual post-window frames a clean linear ramp.  If the boundary is
-    respected, fade-out is detected normally.
-    """
-    # Static event: frames 30-49 (end=50).
-    # fansub_frame_end - 1 = 49 (in-event, must NOT appear in post-window obs).
-    # Post-window: frames 50-55.
-    quads = {f: _quad_around(100, 50) for f in range(30, 50)}
-    ev = _make_event(event_id=0, start=30, end=50, quads=quads)
-    _write_group(mock_globals.workdir, [ev])
-
-    scores: dict[int, float] = {}
-    # In-event frames → 1.0 (anchor_intensity is taken from frame 30)
-    for f in range(30, 50):
-        scores[f] = 1.0
-    # Post-window: clean 6-frame linear ramp (scores in [0.05, 0.95] band)
-    fade_out_frames = 6
-    for k in range(1, fade_out_frames + 1):
-        scores[50 - 1 + k] = max(0.0, 1.0 - k / fade_out_frames)  # frames 50-55
-    # Padding → 0
-    for f in range(56, 62):
-        scores[f] = 0.0
-
-    src = FakeDiffSource(scores)
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
-
-    out = result.events[0]
-    # Fade-out must be detected (post-window boundary is correct)
-    assert out.fade_out_ms > 0, (
-        "fade-out not detected; post-window boundary may be incorrect"
-    )
-    assert out.fansub_frame_end > 50, "fansub_frame_end was not extended"
-
-    # fansub_frame_end (50) must be in the source calls (post-window)
-    queried_frames = [f for (f, _) in src.calls]
-    assert 50 in queried_frames, "frame 50 (first post-window frame) was never queried"
-
-    # fansub_frame_end - 1 (49) must NOT appear as a post-window observation.
-    # It IS queried once as the in-event anchor (frame_start=30 query), but
-    # frame 49 itself should not be in the post-window observation loop.
-    # Check: only frame 30 (anchor query) and frames 50+ (post-window) appear
-    # among the post-window-related calls (frames >= 50).
-    post_queried = [f for f in queried_frames if f >= 50]
-    assert 49 not in post_queried, (
-        "frame 49 (fansub_frame_end-1) appeared in post-window observations"
-    )
-
-
-# ---------------------------------------------------------------------------
-# B — split of test_fade_extrapolated_below_min_reverts
-# ---------------------------------------------------------------------------
-
-
-def test_fade_with_too_few_observations_returns_zero(
-    mock_globals: PipelineGlobals,
-) -> None:
-    """Branch: len(obs_xs) < min_frames → return 0.
-
-    At 24 fps, min_frames = ceil(125 / (1000/24)) = ceil(3.0) = 3.
-    A 1-frame ramp yields exactly 1 observation in the [0.05, 0.95] band,
-    which is < 3, so the function must return 0 before fitting.
-    """
-    quads = {f: _quad_around(100, 50) for f in range(30, 50)}
-    ev = _make_event(event_id=0, start=30, end=50, quads=quads)
-    _write_group(mock_globals.workdir, [ev])
-
-    # 1-frame ramp: only 1 observation at score ≈ 0.5 (within [0.05, 0.95])
-    scores = _linear_ramp_scores(30, 50, fade_in_frames=1, pre_window=5)
-    src = FakeDiffSource(scores)
-
-    result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
-
-    assert result.events[0].fade_in_ms == 0
-
-
-def test_fade_extrapolated_below_min_ms_reverts_with_warning(
-    mock_globals: PipelineGlobals,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Branch: enough observations (>= min_frames), but t_extrapolated < min_fade_duration_ms.
-
-    At 24 fps, min_frames = ceil(125 / (1000/24)) = 3.  We provide exactly
-    3 observations (>= min_frames, so the too-few-observations branch is NOT taken)
-    but with a slope so steep the extrapolation yields < 125 ms.
-
-    Maths: constrained fit through anchor (30, 1.0) with 3 obs all at score=0.05
-    (frames 27, 28, 29):
-      slope = Σ(d_i * 0.95) / Σ(d_i²)  where d_i = 30 - f_i ∈ {1, 2, 3}
-            = 0.95 * 6 / 14 ≈ 0.407 /frame
-      t_frames = 1 / 0.407 ≈ 2.46  →  t_ms = round(2.46 * 1000 / 24) ≈ 102 ms < 125 ms ✓
-    """
-    import logging
-
-    quads = {f: _quad_around(100, 50) for f in range(30, 50)}
-    ev = _make_event(event_id=0, start=30, end=50, quads=quads)
-    _write_group(mock_globals.workdir, [ev])
-
-    scores = {f: 1.0 for f in range(30, 50)}
-    # 3 obs at the minimum boundary of the fit range → steep slope, short extrapolation
-    scores[29] = 0.05
-    scores[28] = 0.05
-    scores[27] = 0.05
-    # Frames further away → below band (0.0), not included in observations
-    for f in range(20, 27):
-        scores[f] = 0.0
-    src = FakeDiffSource(scores)
-
-    with caplog.at_level(logging.WARNING, logger="subtitles_ocr.pipeline.animation"):
-        result = AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
-
-    # Extrapolated t_ms ≈ 102 ms < min_fade_duration_ms (125 ms) → revert to 0
-    assert result.events[0].fade_in_ms == 0
-
-
-# ---------------------------------------------------------------------------
-# B — fade-out for linear moving event uses extrapolated bbox
+# B — fade-out boundary uses extrapolated bbox
 # ---------------------------------------------------------------------------
 
 
 def test_fade_out_for_linear_moving_event_uses_extrapolated_bbox(
     mock_globals: PipelineGlobals,
 ) -> None:
-    """Fade-out post-window bboxes must follow the extrapolated linear trajectory.
-
-    Symmetric to ``test_fade_for_linear_moving_event_uses_extrapolated_bbox``
-    for the fade-in side. The event moves from cx=100 (frame 10) to cx=290
-    (frame 29). Post-window frames (>= 30) should be queried with bboxes whose
-    x-centre continues to shift beyond 290, not stuck at the static quad_median.
-    """
+    # Symmetric to test_fade_for_linear_moving_event_uses_extrapolated_bbox.
+    # Post-window frames must be queried with bboxes whose x-centre extends
+    # the trajectory beyond the last in-event quad.
     quads = {f: _quad_around(100 + (f - 10) * 10, 50) for f in range(10, 30)}
     ev = _make_event(event_id=0, start=10, end=30, quads=quads)
     _write_group(mock_globals.workdir, [ev])
 
-    scores = _linear_ramp_scores(10, 30, fade_out_frames=6, post_window=5)
-    src = FakeDiffSource(scores)
+    alphas = _linear_ramp_alpha(10, 30, fade_out_frames=6, post_window=5)
+    src = FakeMaskSource(alphas)
+    AnimationStage(mask_source=src).run(mock_globals, AnimationConfig())
 
-    AnimationStage(diff_source=src).run(mock_globals, AnimationConfig())
-
-    # Filter to only the post-window calls (frames >= 30)
     post_calls = [(f, bbox) for (f, bbox) in src.calls if f >= 30]
-    assert len(post_calls) > 0, "no post-window frames were queried"
-    # Bbox cx must differ across post-window frames (trajectory is extrapolated)
+    assert len(post_calls) > 0
     xs = sorted({(bbox[0] + bbox[2]) / 2 for (_, bbox) in post_calls})
-    assert len(xs) > 1, (
-        "post-window bboxes have identical x-centre; trajectory extrapolation not applied"
-    )
+    assert len(xs) > 1

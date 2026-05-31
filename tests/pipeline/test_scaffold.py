@@ -278,7 +278,7 @@ def test_group_stage_metadata() -> None:
 def test_animation_module_imports() -> None:
     from subtitles_ocr.pipeline import animation
 
-    assert animation.STAGE_VERSION == 4
+    assert animation.STAGE_VERSION == 5
 
 
 def test_animated_event_round_trip() -> None:
@@ -511,8 +511,8 @@ def test_pipeline_config_animation_defaults() -> None:
     assert cfg.animation.fade_search_window_ms == 1250
     assert cfg.animation.min_fade_duration_ms == 125
     assert cfg.animation.fade_duration_cap_ms == 1000
-    assert cfg.animation.fade_score_fit_range == (0.05, 0.95)
-    assert cfg.animation.fade_fit_r2_threshold == 0.3
+    assert cfg.animation.min_in_event_alpha == 0.10
+    assert cfg.animation.fade_alpha_threshold == 0.5
 
 
 def test_pipeline_config_color_defaults() -> None:

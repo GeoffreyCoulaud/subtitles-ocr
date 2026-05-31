@@ -1,15 +1,20 @@
-"""Stage 8 — animation analysis (`\\move` + `\\fad`), ADR-0003 §4.2.
+"""Stage 8 — animation analysis (`\\move` + `\\fad`), ADR-0003 §4.2 (B rev'd by ADR-0010).
 
 Two sub-stages applied in order:
 
 * **A1 (intra-event move)** — linear regression on centroid trajectories.
 * **A2 (inter-event merge)** — fragmented chains stitched when gap + text +
   trajectory R² all agree.
-* **B (fade)** — diff-intensity scoring in pre/post search windows, anchored
-  linear fit, extrapolation to ``score=0``.
+* **B (fade)** — ADR-0010 mask-alpha threshold-crossing detector. For each
+  event, compute a reference mask coverage as the median over the event's
+  in-event frames; then walk the pre/post-event search windows from the
+  *outside in* and stop at the first frame whose ratio to the reference
+  reaches ``fade_alpha_threshold`` (default 0.5 — the half-fade point).
+  Fade duration is twice the distance from that half-crossing to the event
+  boundary.
 
-Fade detection requires a ``diff_source`` (Protocol exposing
-``mean_intensity(frame_idx, bbox) -> float``). When absent, fades are silently
+Fade detection requires a ``mask_source`` (Protocol exposing
+``mask_alpha(frame_idx, bbox) -> float``). When absent, fades are silently
 treated as 0 — useful for tests/integration where no real frames exist.
 """
 
@@ -37,17 +42,7 @@ from subtitles_ocr.timing import ms_to_frame
 
 logger = logging.getLogger(__name__)
 
-STAGE_VERSION: int = 4
-
-# Number of edge frames (leftmost of pre-window for fade-in, rightmost of
-# post-window for fade-out) whose median diff-intensity defines the local
-# "no-subtitle" background. Two source masters (different CRFs, codecs, or
-# remasters) produce a non-zero diff baseline; subtracting it lets the fade
-# fitter see the actual subtitle ramp instead of being dominated by the noise
-# floor. 3 frames is short enough to stay outside any plausible fade ramp
-# (>125ms = 3 frames @24fps min_fade_duration_ms) while suppressing
-# single-frame intensity jitter.
-_FADE_BACKGROUND_SAMPLES: int = 3
+STAGE_VERSION: int = 5
 
 STAGE_NAME = "08_animation"
 
@@ -79,13 +74,15 @@ class AnimationAnalysisResult(BaseModel):
     stats: dict
 
 
-class DiffIntensitySource(Protocol):
-    """Provides mean diff-intensity (LCN+Sobel, see ADR-0002 §9) within bbox.
+class MaskPresenceSource(Protocol):
+    """Provides mask coverage (Stage 4 binary mask, ADR-0010) within bbox.
 
+    Returns the fraction of pixels marked "subtitle" by the per-frame mask,
+    averaged over the grid cells that ``bbox`` covers. Range ``[0, 1]``.
     Bbox is ``(x_min, y_min, x_max, y_max)`` in fansub pixel coordinates,
     half-open (max exclusive)."""
 
-    def mean_intensity(
+    def mask_alpha(
         self, frame_idx: int, bbox: tuple[int, int, int, int]
     ) -> float: ...
 
@@ -113,25 +110,25 @@ class AnimationStage:
         "fansub_total_frames",
     )
 
-    def __init__(self, diff_source: DiffIntensitySource | None = None) -> None:
-        self.diff_source = diff_source
+    def __init__(self, mask_source: MaskPresenceSource | None = None) -> None:
+        self.mask_source = mask_source
 
     def run(
         self, globals: PipelineGlobals, config: AnimationConfig
     ) -> AnimationAnalysisResult:
-        # Lazy auto-load: in production the OCR stage writes a per-frame diff
-        # sidecar at 06_ocr/diff_grid.npz. If no caller injected a diff source
-        # and that sidecar exists, wire a PersistedDiffSource so fade detection
-        # runs. Tests that pre-inject a diff source (or that omit the sidecar)
-        # are unaffected.
-        if self.diff_source is None:
-            diff_sidecar = globals.workdir / "06_ocr" / "diff_grid.npz"
-            if diff_sidecar.exists():
-                from subtitles_ocr.pipeline.frame_processing.diff_intensity import (
-                    PersistedDiffSource,
+        # Lazy auto-load: in production the OCR stage writes a per-frame mask
+        # coverage sidecar at 06_ocr/mask_grid.npz (ADR-0010). If no caller
+        # injected a mask source and that sidecar exists, wire a
+        # PersistedMaskSource so fade detection runs. Tests that pre-inject a
+        # source (or that omit the sidecar) are unaffected.
+        if self.mask_source is None:
+            mask_sidecar = globals.workdir / "06_ocr" / "mask_grid.npz"
+            if mask_sidecar.exists():
+                from subtitles_ocr.pipeline.frame_processing.mask_presence import (
+                    PersistedMaskSource,
                 )
 
-                self.diff_source = PersistedDiffSource(diff_sidecar)
+                self.mask_source = PersistedMaskSource(mask_sidecar)
 
         out_dir = globals.workdir / STAGE_NAME
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -162,7 +159,7 @@ class AnimationStage:
             events,
             config,
             globals,
-            self.diff_source,
+            self.mask_source,
             group_result.fansub_total_frames,
         )
 
@@ -320,35 +317,6 @@ def _linfit(xs: list[float], ys: list[float]) -> tuple[float, float, float]:
     ss_res = sum((y - (slope * x + intercept)) ** 2 for x, y in zip(xs, ys))
     r2 = 1.0 - ss_res / ss_tot
     return slope, intercept, r2
-
-
-def _linfit_through_anchor(
-    xs: list[float],
-    ys: list[float],
-    *,
-    anchor_x: float,
-    anchor_y: float,
-) -> tuple[float, float]:
-    """Constrained linear fit passing through ``(anchor_x, anchor_y)``.
-
-    Returns (slope, r2). Solves min Σ(y_i - (a·(x_i - anchor_x) + anchor_y))².
-    """
-    if not xs:
-        return 0.0, 0.0
-    num = sum((x - anchor_x) * (y - anchor_y) for x, y in zip(xs, ys))
-    den = sum((x - anchor_x) ** 2 for x in xs)
-    if den == 0.0:
-        return 0.0, 0.0
-    slope = num / den
-    mean_y = sum(ys) / len(ys)
-    ss_tot = sum((y - mean_y) ** 2 for y in ys)
-    if ss_tot == 0.0:
-        # All ys equal — anchor consistency determines R².
-        return slope, 1.0 if abs(ys[0] - anchor_y) < 1e-12 else 0.0
-    ss_res = sum(
-        (y - (slope * (x - anchor_x) + anchor_y)) ** 2 for x, y in zip(xs, ys)
-    )
-    return slope, 1.0 - ss_res / ss_tot
 
 
 # ---------------------------------------------------------------------------
@@ -565,23 +533,41 @@ def _occupied_frames(events: list[_WorkingEvent]) -> dict[int, int]:
     return out
 
 
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    if n % 2 == 1:
+        return float(s[n // 2])
+    return float(0.5 * (s[n // 2 - 1] + s[n // 2]))
+
+
 def _detect_fades(
     events: list[_WorkingEvent],
     config: AnimationConfig,
     globals: PipelineGlobals,
-    source: DiffIntensitySource | None,
+    source: MaskPresenceSource | None,
     total_frames: int,
 ) -> list[AnimatedEvent]:
+    """ADR-0010 mask-alpha threshold-crossing fade detector.
+
+    For every event we measure a reference mask coverage (median of
+    in-event mask alpha values), then walk the pre-/post-event windows
+    from the *outside in*. The first frame whose ratio to the reference
+    reaches ``fade_alpha_threshold`` is the half-fade point; the fade
+    duration is twice the distance from that point to the event
+    boundary.
+    """
     if source is None:
         logger.info(
-            "animation stage: no diff_source provided, fade detection skipped"
+            "animation stage: no mask_source provided, fade detection skipped"
         )
         return [ev.to_animated_event() for ev in events]
 
     window_frames = max(1, ms_to_frame(config.fade_search_window_ms, globals.fps))
-    min_frames = max(1, math.ceil(
-        config.min_fade_duration_ms / (1000.0 / float(globals.fps))
-    ))
+    fps_f = float(globals.fps)
+    ms_per_frame = 1000.0 / fps_f
     occupied = _occupied_frames(events)
 
     for ev in events:
@@ -590,68 +576,69 @@ def _detect_fades(
         if ev.fansub_frame_end <= ev.fansub_frame_start:
             continue
 
-        # Anchor scoring: score(K) normalized by mean diff intensity at the
-        # event-start frame (using its bbox).
-        start_bbox = _bbox_at_frame_for_event(ev, ev.fansub_frame_start)
-        anchor_intensity = source.mean_intensity(ev.fansub_frame_start, start_bbox)
-        if anchor_intensity <= 0:
-            continue
-
-        # Fade-in side: pre-window frames in [start - W, start)
-        pre_frames = [
-            f
-            for f in range(
-                max(0, ev.fansub_frame_start - window_frames), ev.fansub_frame_start
-            )
-            if occupied.get(f, ev.event_id) == ev.event_id
+        # Reference: median in-event mask coverage.
+        in_event_alphas = [
+            source.mask_alpha(f, _bbox_at_frame_for_event(ev, f))
+            for f in range(ev.fansub_frame_start, ev.fansub_frame_end)
         ]
-        in_background = _estimate_background(pre_frames, ev, source, side="in")
-        t_in_ms = _fit_fade(
-            ev,
-            pre_frames,
-            anchor_intensity,
-            background_intensity=in_background,
-            anchor_frame=ev.fansub_frame_start,
-            config=config,
-            globals=globals,
+        alpha_ref = _median(in_event_alphas)
+        if alpha_ref < config.min_in_event_alpha:
+            # Likely broken OCR or no real subtitle — no fade signal to trust.
+            continue
+        threshold = config.fade_alpha_threshold * alpha_ref
+
+        # Cap search windows to the gap to the adjacent events; the mask
+        # grid is global, so a neighbouring event's rendered text would
+        # otherwise pollute our fade signal.
+        prev_end = 0
+        next_start = total_frames
+        for other in events:
+            if other is ev:
+                continue
+            if other.fansub_frame_end <= ev.fansub_frame_start:
+                prev_end = max(prev_end, other.fansub_frame_end)
+            elif other.fansub_frame_start >= ev.fansub_frame_end:
+                next_start = min(next_start, other.fansub_frame_start)
+
+        pre_window_start = max(
+            0, ev.fansub_frame_start - window_frames, prev_end
+        )
+        post_window_end = min(
+            total_frames, ev.fansub_frame_end + window_frames, next_start
+        )
+
+        # Fade-in: walk inside→out from `start - 1` toward `pre_window_start`.
+        t_in_ms = _fade_duration_ms(
+            ev=ev,
             source=source,
-            min_frames=min_frames,
+            occupied=occupied,
+            scan=range(ev.fansub_frame_start - 1, pre_window_start - 1, -1),
+            threshold=threshold,
+            boundary_frame=ev.fansub_frame_start,
+            ms_per_frame=ms_per_frame,
+            config=config,
             side="in",
         )
 
-        # Fade-out side: post-window frames in [end, end + W)
-        post_frames = [
-            f
-            for f in range(
-                ev.fansub_frame_end,
-                min(total_frames, ev.fansub_frame_end + window_frames),
-            )
-            if occupied.get(f, ev.event_id) == ev.event_id
-        ]
-        out_background = _estimate_background(post_frames, ev, source, side="out")
-        t_out_ms = _fit_fade(
-            ev,
-            post_frames,
-            anchor_intensity,
-            background_intensity=out_background,
-            anchor_frame=ev.fansub_frame_end - 1,
-            config=config,
-            globals=globals,
+        # Fade-out: walk inside→out from `end` toward `post_window_end`.
+        t_out_ms = _fade_duration_ms(
+            ev=ev,
             source=source,
-            min_frames=min_frames,
+            occupied=occupied,
+            scan=range(ev.fansub_frame_end, post_window_end),
+            threshold=threshold,
+            boundary_frame=ev.fansub_frame_end - 1,
+            ms_per_frame=ms_per_frame,
+            config=config,
             side="out",
         )
 
         ev.fade_in_ms = t_in_ms
         ev.fade_out_ms = t_out_ms
 
-        # Consistency: t_in + t_out must fit within (extended) event duration
+        # Consistency: t_in + t_out must fit within event duration.
         duration_ms = int(
-            round(
-                (ev.fansub_frame_end - ev.fansub_frame_start)
-                * 1000.0
-                / float(globals.fps)
-            )
+            round((ev.fansub_frame_end - ev.fansub_frame_start) * ms_per_frame)
         )
         if ev.fade_in_ms + ev.fade_out_ms > duration_ms:
             logger.warning(
@@ -665,7 +652,7 @@ def _detect_fades(
             ev.fade_out_ms = 0
             continue
 
-        # Extend boundaries to cover the fade ramps
+        # Extend boundaries to cover the fade ramps.
         if ev.fade_in_ms > 0:
             extend = ms_to_frame(ev.fade_in_ms, globals.fps)
             ev.fansub_frame_start = max(0, ev.fansub_frame_start - extend)
@@ -676,87 +663,49 @@ def _detect_fades(
     return [ev.to_animated_event() for ev in events]
 
 
-def _estimate_background(
-    frames: list[int],
-    ev: _WorkingEvent,
-    source: DiffIntensitySource,
+def _fade_duration_ms(
     *,
-    side: str,
-    n_samples: int = _FADE_BACKGROUND_SAMPLES,
-) -> float:
-    """Median diff intensity at the edge of the fade-search window — the part
-    furthest from the event boundary, where any subtitle has long since
-    finished its fade. Returns 0.0 if no frames are available (caller will
-    interpret as "no background subtraction", matching the pre-existing
-    behaviour for fade-less-clean signals)."""
-    if not frames:
-        return 0.0
-    sample_frames = frames[:n_samples] if side == "in" else frames[-n_samples:]
-    intensities = sorted(
-        source.mean_intensity(f, _bbox_at_frame_for_event(ev, f))
-        for f in sample_frames
-    )
-    return float(intensities[len(intensities) // 2])
-
-
-def _fit_fade(
     ev: _WorkingEvent,
-    frames: list[int],
-    anchor_intensity: float,
-    *,
-    background_intensity: float,
-    anchor_frame: int,
+    source: MaskPresenceSource,
+    occupied: dict[int, int],
+    scan: range,
+    threshold: float,
+    boundary_frame: int,
+    ms_per_frame: float,
     config: AnimationConfig,
-    globals: PipelineGlobals,
-    source: DiffIntensitySource,
-    min_frames: int,
     side: str,
 ) -> int:
-    score_lo, score_hi = config.fade_score_fit_range
-    denom = anchor_intensity - background_intensity
-    # Background ≥ anchor → no usable subtitle signal in this window. Anchor
-    # itself may have been measured on a frame that's not actually subtitle-on
-    # (mistimed event boundary), or the source is degenerate.
-    if denom <= 0.0:
-        return 0
-    obs_xs: list[float] = []
-    obs_ys: list[float] = []
-    for f in frames:
-        bbox = _bbox_at_frame_for_event(ev, f)
-        raw = source.mean_intensity(f, bbox)
-        s = (raw - background_intensity) / denom
-        if score_lo <= s <= score_hi:
-            obs_xs.append(float(f))
-            obs_ys.append(s)
+    """Walk `scan` from inside→out; record the last frame still ≥ threshold
+    until alpha drops below it. That last frame is the half-fade crossing.
 
-    if len(obs_xs) < min_frames:
+    Inside→out (rather than outside→in) is robust against neighbouring
+    events whose mask coverage leaks into this event's bbox: by stopping
+    at the first sub-threshold frame, we never reach the next event's
+    fade-in. Walking is also halted as soon as we cross into a frame
+    owned by another event (the bound on `scan` already does most of
+    that, but defensively so).
+    """
+    last_above: int | None = None
+    observed_drop = False
+    for f in scan:
+        if occupied.get(f, ev.event_id) != ev.event_id:
+            break
+        alpha = source.mask_alpha(f, _bbox_at_frame_for_event(ev, f))
+        if alpha < threshold:
+            observed_drop = True
+            break
+        last_above = f
+    if last_above is None or not observed_drop:
+        # If the alpha never dropped below threshold in the search window the
+        # text never really faded — the high coverage we kept seeing was the
+        # neighbouring event's text leaking into our bbox.
         return 0
-
-    slope, r2 = _linfit_through_anchor(
-        obs_xs, obs_ys, anchor_x=float(anchor_frame), anchor_y=1.0
-    )
-    if r2 < config.fade_fit_r2_threshold:
-        logger.warning(
-            "event %d (%s-fade): R²=%.3f < %.2f; reverting",
-            ev.event_id,
-            side,
-            r2,
-            config.fade_fit_r2_threshold,
-        )
-        return 0
-    if slope == 0:
-        return 0
-    # Extrapolate y = slope*(x - anchor_x) + 1 → 0 at x = anchor_x - 1/slope
-    fade_origin = -1.0 / slope  # frames offset from anchor where score=0
-    t_frames = abs(fade_origin)
-    fps_f = float(globals.fps)
-    t_ms = int(round(t_frames * 1000.0 / fps_f))
-
+    t_ms = int(round(abs(last_above - boundary_frame) * ms_per_frame * 2))
     if t_ms < config.min_fade_duration_ms:
         return 0
     if t_ms > config.fade_duration_cap_ms:
         logger.warning(
-            "event %d (%s-fade): extrapolated %dms > cap %dms; reverting",
+            "event %d (%s-fade): extracted %dms > cap %dms; reverting",
             ev.event_id,
             side,
             t_ms,
