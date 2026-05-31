@@ -156,11 +156,13 @@ def _merge_wrapped_lines(
     """Merge OCR events that look like top/bottom halves of a wrapped subtitle.
 
     Long dialogue lines render on screen as two visual lines but fansub .ass
-    files store them as a single string. PaddleOCR detects each visual line
-    as a separate text box, which becomes two trajectories and two events
-    here. Merging them into a single event with `\\N` between the texts both
-    improves text_plain (each ref event gets the full text instead of half)
-    and precision (one event matches instead of one matched + one unmatched).
+    files store them as a single string with no explicit ``\\N`` — the ASS
+    renderer auto-wraps based on rendered width. PaddleOCR detects each
+    visual line as a separate text box, which becomes two trajectories and
+    two events here. We join their texts with a space so the merged event
+    presents to the renderer the same way the fansubber's original single
+    line did, recovering ``text_plain`` / ``precision`` *and* matching the
+    fansub's "no \\N" convention so ``line_breaks`` is preserved.
 
     Merge criterion: two events overlap in time (≥ 80 %), are horizontally
     adjacent (x-centre within 25 % of frame width), and are stacked
@@ -222,7 +224,7 @@ def _merge_wrapped_lines(
             continue
         partner = by_idx[best_j]
         top, bottom = (pe, partner) if cy_a <= centroid(partner)[1] else (partner, pe)
-        text = top.cleaned_text + "\n" + bottom.cleaned_text
+        text = top.cleaned_text + " " + bottom.cleaned_text
         # Use the longer trajectory's event as the carrier (more reliable
         # quad_median / frame range).
         carrier_ev = top.event if len(top.event.member_frame_indices) >= len(

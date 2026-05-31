@@ -446,6 +446,40 @@ def test_export_multiline_text_becomes_hard_break(
     assert "\\N" in line.text
 
 
+def test_export_wrap_merge_joins_with_space_not_hard_break(
+    mock_globals: PipelineGlobals,
+) -> None:
+    # Two stacked dialogue OCR events that look like a wrapped subtitle.
+    # The wrap-merge joins them into a single event whose text is a plain
+    # space-separated string — the ASS renderer auto-wraps to match ref's
+    # convention (ref dialogue rarely emits explicit \N for natural wraps).
+    top = _make_event(
+        0,
+        [(860, 940), (1060, 940), (1060, 990), (860, 990)],
+        fansub_frame_start=0,
+        fansub_frame_end=24,
+    )
+    bottom = _make_event(
+        1,
+        [(860, 1000), (1060, 1000), (1060, 1050), (860, 1050)],
+        fansub_frame_start=0,
+        fansub_frame_end=24,
+    )
+    anim = AnimationAnalysisResult(events=[top, bottom], stats={})
+    colors = _make_colors(
+        (0, (255, 255, 255), (0, 0, 0), True),
+        (1, (255, 255, 255), (0, 0, 0), True),
+    )
+    doc = _make_doc((0, "Top half"), (1, "bottom half"))
+    _write_inputs(mock_globals.workdir, anim, colors, doc)
+
+    result = ExportStage().run(mock_globals, ExportConfig())
+    assert result.event_count == 1
+    line = pysubs2.load(str(result.out_path_written))[0]
+    assert line.text == "Top half bottom half"
+    assert "\\N" not in line.text
+
+
 # ---------------------------------------------------------------------------
 # Atomicity
 # ---------------------------------------------------------------------------
