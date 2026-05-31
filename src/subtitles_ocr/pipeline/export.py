@@ -490,7 +490,6 @@ def _build_ssa_file(
                 config=config,
             )
 
-    total_duration_ms = frame_to_ms(globals.fansub_total_frames, globals.fps)
     for i, pe in enumerate(per_event):
         style_name = style_assignments[i]
         ev = pe.event
@@ -500,73 +499,15 @@ def _build_ssa_file(
         text = pe.cleaned_text.replace("\n", "\\N")
         position_class: PositionClass = pe.position  # type: ignore[assignment]
 
-        # Detect "character intro" pattern: ALL-CAPS event of at least 3
-        # letters AND mid-screen vertical position (y in the centre band).
-        # Fansubs consistently apply {\pos(...)\fad(350,0)} to these
-        # overlays; the y filter rejects ALL-CAPS overlays that ride at the
-        # very top or bottom of the frame ("LA PROCHAINE FOIS" cards at the
-        # top, OCR truncations of Book Title - Big at the bottom) where ref
-        # uses \pos alone without \fad.
-        plain_text = pe.cleaned_text.replace("\n", "")
-        alphas = [c for c in plain_text if c.isalpha()]
-        cx, cy = _centroid(ev.quad_median)
-        w, h = globals.fansub_width, globals.fansub_height
-        in_intro_band = (
-            (h * 0.40) <= cy <= (h * 0.85)
-            and (w * 0.20) <= cx <= (w * 0.70)
-        )
-        is_character_intro = (
-            len(alphas) >= 3
-            and all(c.isupper() for c in alphas)
-            and in_intro_band
-        )
-
-        # Detect "episode title card" patterns:
-        # - Opening title: first 15 s of the video, duration ≥ 4 s; ref uses
-        #   {\pos(...)\fad(500,0)}.
-        # - Closing / next-episode title: last 30 s of the video, duration ≥
-        #   4 s, and the text does not look like a regular sentence (no
-        #   terminal "?" or "." — title cards rarely end with those). Ref
-        #   uses {\pos(...)} only (no fade).
-        duration_ms = end_ms - start_ms
-        near_start = start_ms < 15_000
-        near_end = end_ms > (total_duration_ms - 30_000)
-        has_alpha = any(c.isalpha() for c in plain_text)
-        stripped = plain_text.rstrip()
-        looks_like_sentence = stripped.endswith(("?", ".", "…"))
-        is_opening_title = (
-            near_start
-            and duration_ms >= 4_000
-            and not is_character_intro
-            and has_alpha
-        )
-        is_closing_title = (
-            near_end
-            and duration_ms >= 4_000
-            and not is_character_intro
-            and has_alpha
-            and not looks_like_sentence
-        )
-
-        is_title_overlay = (
-            is_character_intro or is_opening_title or is_closing_title
-        )
-        emit_overlay_fade = is_character_intro or is_opening_title
-        fade_in_for_overlay = 500 if is_opening_title else 350
-
         # Inline tag order: position + rotation + animation + (colors NEVER inline)
         tag_parts: list[str] = []
-        if position_class == "Sign" or is_title_overlay:
+        if position_class == "Sign":
             cx, cy = _centroid(ev.quad_median)
             tag_parts.append(f"\\pos({int(round(cx))},{int(round(cy))})")
-        # Rotation: only emitted on Sign-class events (mid-screen overlays
-        # like in-frame signs and rotated annotations). Title overlays
-        # (Episode Title, character intros) and regular dialogue almost never
-        # carry \frz in fansubs, but their OCR quads have sub-degree
-        # rotation noise that would create styling-component mismatches.
-        # ASS spec is `\frzNUMBER` (no parentheses) — that is what the
-        # evaluation tag parser expects.
-        if position_class == "Sign":
+            # Rotation: only emitted on Sign-class events (mid-screen overlays
+            # like in-frame signs and rotated annotations). Regular dialogue
+            # OCR quads have sub-degree rotation noise that would create
+            # styling-component mismatches. ASS spec: `\frzNUMBER` (no parens).
             angle = _rotation_angle_deg(ev.quad_median)
             if abs(angle) >= _FRZ_OMIT_THRESHOLD_DEG:
                 tag_parts.append(f"\\frz{_format_float(angle)}")
@@ -578,14 +519,11 @@ def _build_ssa_file(
             tag_parts.append(f"\\move({int(x1)},{int(y1)},{int(x2)},{int(y2)})")
 
         # Animation-detected fades are noisy on real material; we trust them
-        # only when explicitly enabled via config. The text-pattern title-
-        # overlay heuristic is the default reliable signal.
+        # only when explicitly enabled via config.
         if config.emit_animation_fades and (
             ev.fade_in_ms > 0 or ev.fade_out_ms > 0
         ):
             tag_parts.append(f"\\fad({ev.fade_in_ms},{ev.fade_out_ms})")
-        elif emit_overlay_fade:
-            tag_parts.append(f"\\fad({fade_in_for_overlay},0)")
 
         if tag_parts:
             inline = "{" + "".join(tag_parts) + "}"

@@ -1,10 +1,17 @@
 # ADR-0007: Scoring optimization — KenIchi S01E01 case study
 
 Branch: `feat/subtitle-pixels-by-diff-with-raw`
-Status: Implemented.
+Status: Partially superseded by ADR-0008.
 Revises: ADR-0002 §3 Stage 6 (OCR — model selection), ADR-0002 §3 Stage 11
 (Export — inline tag emission policy), ADR-0005 §2.4 (Normalize noise floor).
 Does not revise: ADR-0006 (scoring method is unchanged).
+
+> **§3.4 retired.** The text-pattern `\pos\fad` heuristic (character intro /
+> opening / closing title) was an over-fit workaround for ADR-0006's
+> inline-only position score. With ADR-0008's effective-anchor scoring it
+> serves no purpose, and was removed from `pipeline/export.py` in the same
+> commit that landed the new scoring. §3.4 below is kept for historical
+> reference. All other sections (3.1-3.3, 3.5-3.10) remain in effect.
 
 ## 1. Context
 
