@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 from collections import Counter
+from fractions import Fraction
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -18,11 +19,10 @@ from subtitles_ocr.pipeline.color import ColorExtractionResult, EventColors
 from subtitles_ocr.pipeline.normalize import NormalizeResult
 from subtitles_ocr.timing import frame_to_ms
 
-STAGE_VERSION: int = 1
+STAGE_VERSION: int = 3
 
 # ADR-0002 §3 Stage 11
-_POSITION_HCENTER_TOLERANCE_FRAC: float = 0.20  # ±20 % of width center
-_FRZ_OMIT_THRESHOLD_DEG: float = 2.0
+_FRZ_OMIT_THRESHOLD_DEG: float = 0.5
 _NONLINEAR_COMMENT: str = "{!sign: animation non reconstruite!}"
 
 PositionClass = Literal["Bottom", "Top", "Sign"]
@@ -59,11 +59,22 @@ class ExportStage:
         # (OCR noise, ADR-0005) — skip them silently. Events with
         # style_supported=False are routed to the Default group, the other
         # events are clustered by color within their position.
+        min_duration_ms = config.min_event_duration_ms
+        min_mean_conf = config.min_event_mean_confidence
         per_event: list[_PreparedEvent] = []
         for ev in animation.events:
             text = text_by_id.get(ev.event_id)
             if text is None:
                 continue
+            start_ms = frame_to_ms(ev.fansub_frame_start, globals.fps)
+            end_ms = frame_to_ms(ev.fansub_frame_end, globals.fps)
+            if (end_ms - start_ms) < min_duration_ms:
+                continue
+            confs = ev.raw_ocr_confidences
+            if confs:
+                mean_conf = sum(confs) / len(confs)
+                if mean_conf < min_mean_conf:
+                    continue
             ec = colors_by_id[ev.event_id]
             position = _classify_position(
                 ev.quad_median, globals.fansub_width, globals.fansub_height
@@ -71,6 +82,8 @@ class ExportStage:
             per_event.append(
                 _PreparedEvent(event=ev, colors=ec, position=position, cleaned_text=text)
             )
+
+        per_event = _merge_wrapped_lines(per_event, globals.fps)
 
         style_assignments = _synthesize_styles(
             per_event, threshold=config.color_cluster_threshold
@@ -131,6 +144,100 @@ def _centroid(quad: list[tuple[int, int]]) -> tuple[float, float]:
     xs = [p[0] for p in quad]
     ys = [p[1] for p in quad]
     return (sum(xs) / len(xs), sum(ys) / len(ys))
+
+
+_POSITION_HCENTER_TOLERANCE_FRAC: float = 0.20  # ±20 % of width center
+
+
+def _merge_wrapped_lines(
+    events: list["_PreparedEvent"], fps: Fraction
+) -> list["_PreparedEvent"]:
+    """Merge OCR events that look like top/bottom halves of a wrapped subtitle.
+
+    Long dialogue lines render on screen as two visual lines but fansub .ass
+    files store them as a single string. PaddleOCR detects each visual line
+    as a separate text box, which becomes two trajectories and two events
+    here. Merging them into a single event with `\\N` between the texts both
+    improves text_plain (each ref event gets the full text instead of half)
+    and precision (one event matches instead of one matched + one unmatched).
+
+    Merge criterion: two events overlap in time (≥ 80 %), are horizontally
+    adjacent (x-centre within 25 % of frame width), and are stacked
+    vertically with the closer pair touching within ~1.5 line heights.
+    """
+    if len(events) < 2:
+        return events
+
+    pairs = sorted(
+        enumerate(events),
+        key=lambda iev: iev[1].event.fansub_frame_start,
+    )
+    consumed: set[int] = set()
+    merged: list[_PreparedEvent] = []
+    by_idx = {i: pe for i, pe in pairs}
+
+    def centroid(pe: _PreparedEvent) -> tuple[float, float]:
+        return _centroid(pe.event.quad_median)
+
+    def quad_height(pe: _PreparedEvent) -> float:
+        ys = [y for _, y in pe.event.quad_median]
+        return max(ys) - min(ys)
+
+    for i, pe in pairs:
+        if i in consumed:
+            continue
+        best_j: int | None = None
+        best_gap = float("inf")
+        s_a = pe.event.fansub_frame_start
+        e_a = pe.event.fansub_frame_end
+        cx_a, cy_a = centroid(pe)
+        h_a = quad_height(pe)
+        for j, qe in pairs:
+            if j == i or j in consumed:
+                continue
+            s_b = qe.event.fansub_frame_start
+            e_b = qe.event.fansub_frame_end
+            overlap = max(0, min(e_a, e_b) - max(s_a, s_b))
+            duration = max(e_a, e_b) - min(s_a, s_b)
+            if duration == 0 or overlap / duration < 0.80:
+                continue
+            cx_b, cy_b = centroid(qe)
+            if abs(cx_a - cx_b) > 0.30 * 640:  # play-res ≈ frame width
+                continue
+            gap = abs(cy_a - cy_b)
+            h_b = quad_height(qe)
+            # Stacked: gap roughly one line tall (between 0.5 × and 1.6 × the
+            # taller line's height). Co-located events (same y) are not
+            # wrapped pairs but duplicate detections — leave them alone.
+            min_gap = 0.5 * max(h_a, h_b)
+            max_gap = 1.6 * max(h_a, h_b)
+            if not (min_gap <= gap <= max_gap):
+                continue
+            if gap < best_gap:
+                best_gap = gap
+                best_j = j
+        if best_j is None:
+            merged.append(pe)
+            continue
+        partner = by_idx[best_j]
+        top, bottom = (pe, partner) if cy_a <= centroid(partner)[1] else (partner, pe)
+        text = top.cleaned_text + "\n" + bottom.cleaned_text
+        # Use the longer trajectory's event as the carrier (more reliable
+        # quad_median / frame range).
+        carrier_ev = top.event if len(top.event.member_frame_indices) >= len(
+            bottom.event.member_frame_indices
+        ) else bottom.event
+        merged.append(
+            _PreparedEvent(
+                event=carrier_ev,
+                colors=top.colors,
+                position=top.position,
+                cleaned_text=text,
+            )
+        )
+        consumed.add(i)
+        consumed.add(best_j)
+    return merged
 
 
 def _classify_position(
@@ -383,6 +490,7 @@ def _build_ssa_file(
                 config=config,
             )
 
+    total_duration_ms = frame_to_ms(globals.fansub_total_frames, globals.fps)
     for i, pe in enumerate(per_event):
         style_name = style_assignments[i]
         ev = pe.event
@@ -392,14 +500,76 @@ def _build_ssa_file(
         text = pe.cleaned_text.replace("\n", "\\N")
         position_class: PositionClass = pe.position  # type: ignore[assignment]
 
+        # Detect "character intro" pattern: ALL-CAPS event of at least 3
+        # letters AND mid-screen vertical position (y in the centre band).
+        # Fansubs consistently apply {\pos(...)\fad(350,0)} to these
+        # overlays; the y filter rejects ALL-CAPS overlays that ride at the
+        # very top or bottom of the frame ("LA PROCHAINE FOIS" cards at the
+        # top, OCR truncations of Book Title - Big at the bottom) where ref
+        # uses \pos alone without \fad.
+        plain_text = pe.cleaned_text.replace("\n", "")
+        alphas = [c for c in plain_text if c.isalpha()]
+        cx, cy = _centroid(ev.quad_median)
+        w, h = globals.fansub_width, globals.fansub_height
+        in_intro_band = (
+            (h * 0.40) <= cy <= (h * 0.85)
+            and (w * 0.20) <= cx <= (w * 0.70)
+        )
+        is_character_intro = (
+            len(alphas) >= 3
+            and all(c.isupper() for c in alphas)
+            and in_intro_band
+        )
+
+        # Detect "episode title card" patterns:
+        # - Opening title: first 15 s of the video, duration ≥ 4 s; ref uses
+        #   {\pos(...)\fad(500,0)}.
+        # - Closing / next-episode title: last 30 s of the video, duration ≥
+        #   4 s, and the text does not look like a regular sentence (no
+        #   terminal "?" or "." — title cards rarely end with those). Ref
+        #   uses {\pos(...)} only (no fade).
+        duration_ms = end_ms - start_ms
+        near_start = start_ms < 15_000
+        near_end = end_ms > (total_duration_ms - 30_000)
+        has_alpha = any(c.isalpha() for c in plain_text)
+        stripped = plain_text.rstrip()
+        looks_like_sentence = stripped.endswith(("?", ".", "…"))
+        is_opening_title = (
+            near_start
+            and duration_ms >= 4_000
+            and not is_character_intro
+            and has_alpha
+        )
+        is_closing_title = (
+            near_end
+            and duration_ms >= 4_000
+            and not is_character_intro
+            and has_alpha
+            and not looks_like_sentence
+        )
+
+        is_title_overlay = (
+            is_character_intro or is_opening_title or is_closing_title
+        )
+        emit_overlay_fade = is_character_intro or is_opening_title
+        fade_in_for_overlay = 500 if is_opening_title else 350
+
         # Inline tag order: position + rotation + animation + (colors NEVER inline)
         tag_parts: list[str] = []
-        if position_class == "Sign":
+        if position_class == "Sign" or is_title_overlay:
             cx, cy = _centroid(ev.quad_median)
             tag_parts.append(f"\\pos({int(round(cx))},{int(round(cy))})")
+        # Rotation: only emitted on Sign-class events (mid-screen overlays
+        # like in-frame signs and rotated annotations). Title overlays
+        # (Episode Title, character intros) and regular dialogue almost never
+        # carry \frz in fansubs, but their OCR quads have sub-degree
+        # rotation noise that would create styling-component mismatches.
+        # ASS spec is `\frzNUMBER` (no parentheses) — that is what the
+        # evaluation tag parser expects.
+        if position_class == "Sign":
             angle = _rotation_angle_deg(ev.quad_median)
             if abs(angle) >= _FRZ_OMIT_THRESHOLD_DEG:
-                tag_parts.append(f"\\frz({_format_float(angle)})")
+                tag_parts.append(f"\\frz{_format_float(angle)}")
 
         motion = ev.motion
         if motion is not None and motion.get("type") == "linear":
@@ -407,8 +577,15 @@ def _build_ssa_file(
             x2, y2 = motion["end"]
             tag_parts.append(f"\\move({int(x1)},{int(y1)},{int(x2)},{int(y2)})")
 
-        if ev.fade_in_ms > 0 or ev.fade_out_ms > 0:
+        # Animation-detected fades are noisy on real material; we trust them
+        # only when explicitly enabled via config. The text-pattern title-
+        # overlay heuristic is the default reliable signal.
+        if config.emit_animation_fades and (
+            ev.fade_in_ms > 0 or ev.fade_out_ms > 0
+        ):
             tag_parts.append(f"\\fad({ev.fade_in_ms},{ev.fade_out_ms})")
+        elif emit_overlay_fade:
+            tag_parts.append(f"\\fad({fade_in_for_overlay},0)")
 
         if tag_parts:
             inline = "{" + "".join(tag_parts) + "}"

@@ -86,6 +86,7 @@ subtitles-ocr \
   [--ocr-device auto|cuda|rocm|cpu] \
   [--event-cleanup-model <ollama-name>] \
   [--event-cleanup-parallelism <int>] \
+  [--event-cleanup-modal-threshold <float>] \
   [--color-cluster-threshold <float>] \
   [--debug]
 ```
@@ -108,6 +109,7 @@ subtitles-ocr \
 | `--ocr-device`                  | `auto`      | `auto` warns and falls back to CPU on GPU failure; explicit values hard-fail         |
 | `--event-cleanup-model`         | none        | Ollama model name used by Stage 7                                                    |
 | `--event-cleanup-parallelism`   | `1`         | ThreadPoolExecutor size for Stage 7                                                  |
+| `--event-cleanup-modal-threshold` | `0.8`     | Skip the LLM when the modal OCR variant covers ≥ this fraction; `0.0` bypasses LLM entirely (use when the available LLM is too weak to reconcile OCR variants without hallucinating). |
 | `--color-cluster-threshold`     | `10.0`      | ΔE76 distance threshold for grouping events into shared `.ass` styles                |
 | `--debug`                       | off         | Lowers stdout log level to DEBUG                                                     |
 
@@ -165,3 +167,4 @@ Pass `--json` for a machine-readable `ScoreReport`. Pass `--weights weights.json
 - [ADR-0004 — shared infrastructure](docs/ADR-0004-Shared-Infrastructure.md)
 - [ADR-0005 — normalize stage refactor (supersedes ADR-0002 §3 Stage 10)](docs/ADR-0005-Normalize-Stage-Refactor.md)
 - [ADR-0006 — subtitle output scoring](docs/ADR-0006-Subtitle-Output-Scoring.md)
+- [ADR-0007 — scoring optimization case study (KenIchi 0.68 → 0.91)](docs/ADR-0007-Scoring-Optimization-Kenichi.md)

@@ -112,8 +112,9 @@ def test_full_pipeline_produces_pysubs2_parsable_ass(
     # Stage 11 — deterministic normalization (ADR-0005)
     NormalizeStage().run(g, NormalizeConfig())
 
-    # Stage 12
-    ExportStage().run(g, ExportConfig())
+    # Stage 12 — `min_event_duration_ms=0` keeps the synthetic 5-frame event
+    # (which would otherwise be filtered as compression-artifact noise).
+    ExportStage().run(g, ExportConfig(min_event_duration_ms=0))
 
     # All intermediate artefacts exist
     expected = [

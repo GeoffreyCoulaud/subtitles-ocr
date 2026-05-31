@@ -51,6 +51,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--event-cleanup-model", default=None)
     p.add_argument("--event-cleanup-parallelism", type=int, default=1)
+    p.add_argument(
+        "--event-cleanup-modal-threshold",
+        type=float,
+        default=0.8,
+        help=(
+            "Skip the LLM when the modal OCR variant covers ≥ this fraction "
+            "of variants. Set to 0.0 to always trust the modal text and "
+            "bypass the LLM entirely (recommended when the available LLM is "
+            "too weak to reliably reconcile OCR variants)."
+        ),
+    )
     p.add_argument("--color-cluster-threshold", type=float, default=10.0)
     p.add_argument("--debug", action="store_true")
 
@@ -92,6 +103,7 @@ def _build_config(ns: argparse.Namespace) -> PipelineConfig:
     config.ocr.device = ns.ocr_device
     config.event_cleanup.model = ns.event_cleanup_model
     config.event_cleanup.parallelism = ns.event_cleanup_parallelism
+    config.event_cleanup.modal_consensus_threshold = ns.event_cleanup_modal_threshold
     config.export.color_cluster_threshold = ns.color_cluster_threshold
     return config
 

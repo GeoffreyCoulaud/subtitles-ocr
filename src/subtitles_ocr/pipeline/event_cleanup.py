@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
+
+from rapidfuzz.distance import Levenshtein
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import ClassVar
@@ -19,7 +21,7 @@ from subtitles_ocr.pipeline.animation import AnimatedEvent, AnimationAnalysisRes
 
 logger = logging.getLogger(__name__)
 
-STAGE_VERSION: int = 2
+STAGE_VERSION: int = 3
 
 _STAGE_NAME = "10_event_cleanup"
 _LLM_HINT = "Check Ollama logs and --event-cleanup-model availability."
@@ -44,11 +46,19 @@ class EventCleanupResult(BaseModel):
 def _build_prompt(event: AnimatedEvent) -> str:
     variants = "\n".join(f"- {t!r}" for t in event.raw_ocr_texts)
     return (
-        "You are reconciling OCR variants of one subtitle event into the single "
-        "canonical text the original line most likely was.\n"
-        "Fix common OCR confusables (rn/m, I/l/1, missing accents).\n"
-        "Return JSON {\"text\": \"...\"} only.\n\n"
-        f"Variants:\n{variants}\n"
+        "Tu reçois plusieurs variantes OCR d'un même sous-titre français. "
+        "Choisis la variante qui te semble la plus correcte et corrige UNIQUEMENT "
+        "ces erreurs OCR systématiques :\n"
+        "  - accents perdus : etre→être, deja→déjà, etudiant→étudiant, "
+        "ca→ça, ou→où, la→là, a→à, meme→même, tres→très\n"
+        "  - apostrophes perdues : Cest→C'est, quil→qu'il, Jai→J'ai, Tai→J'ai (T mal lu)\n"
+        "  - confusables : I/l/1, rn/m, 0/O\n"
+        "RÈGLES STRICTES :\n"
+        "  - N'INVENTE PAS de mots. Le sens et la longueur doivent rester proches "
+        "des variantes fournies.\n"
+        "  - Si toutes les variantes sont identiques après normalisation, garde la modale.\n"
+        "  - Réponds en JSON {\"text\": \"...\"} uniquement, sans commentaire.\n\n"
+        f"Variantes OCR :\n{variants}\n"
     )
 
 
@@ -111,9 +121,26 @@ class EventCleanupStage:
                             stage=_STAGE_NAME,
                             hint=_LLM_HINT,
                         ) from e
+                    # Hallucination guard: if the LLM diverges too far from any
+                    # OCR variant, it likely invented text (we observed this
+                    # with small models). Fall back to the modal text in that
+                    # case so the LLM can only help, not hurt.
+                    llm_text = resp.text
+                    max_len = max(len(llm_text), max(len(v) for v in ev.raw_ocr_texts))
+                    if max_len > 0:
+                        best_sim = max(
+                            1.0 - Levenshtein.distance(llm_text, v) / max(len(llm_text), len(v), 1)
+                            for v in ev.raw_ocr_texts
+                        )
+                        if best_sim < 0.5:
+                            return EventCleanupItem(
+                                event_id=ev.event_id,
+                                cleaned_text=modal_text,
+                                skipped_llm=True,
+                            )
                     return EventCleanupItem(
                         event_id=ev.event_id,
-                        cleaned_text=resp.text,
+                        cleaned_text=llm_text,
                         skipped_llm=False,
                     )
 

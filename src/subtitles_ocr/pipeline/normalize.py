@@ -24,7 +24,7 @@ from subtitles_ocr.pipeline.event_cleanup import EventCleanupItem
 
 logger = logging.getLogger(__name__)
 
-STAGE_VERSION: int = 1
+STAGE_VERSION: int = 2
 
 _STAGE_NAME = "11_normalize"
 _OUT_DIR = "11_normalize"
@@ -50,6 +50,90 @@ _HSPACE_RUN = re.compile(r"[ \t]+")
 # Trim horizontal whitespace around newlines so " \n " becomes "\n".
 _NEWLINE_WITH_SPACES = re.compile(r" *\n *")
 
+# Whole-word French accent restoration. PaddleOCR's latin recognition model
+# strips most diacritics; we restore them on a conservative word-level list
+# of unambiguous high-frequency forms. Each (pattern, replacement) is applied
+# case-preservingly inside word boundaries: "Etre" → "Être", "etre" → "être",
+# "ETRE" → "ÊTRE". Ambiguous cases ("ou" → "où", "la" → "là", "a" → "à") are
+# excluded because the unaccented spellings are also valid.
+_FR_ACCENT_REPAIRS: tuple[tuple[str, str], ...] = (
+    ("etre", "être"),
+    ("meme", "même"),
+    ("tres", "très"),
+    ("pere", "père"),
+    ("mere", "mère"),
+    ("frere", "frère"),
+    ("deja", "déjà"),
+    ("voila", "voilà"),
+    ("etudiant", "étudiant"),
+    ("etudiante", "étudiante"),
+    ("interet", "intérêt"),
+    ("interets", "intérêts"),
+    ("cote", "côté"),
+    ("ete", "été"),
+    ("ecole", "école"),
+    ("apres", "après"),
+    ("desole", "désolé"),
+    ("desolee", "désolée"),
+    ("genial", "génial"),
+    ("genia", "génial"),
+    ("fache", "fâché"),
+    ("ame", "âme"),
+    ("ages", "âges"),
+    ("age", "âge"),
+    ("foret", "forêt"),
+    ("hopital", "hôpital"),
+    ("theatre", "théâtre"),
+    ("annee", "année"),
+    ("annees", "années"),
+    ("amenee", "amenée"),
+    ("amenee", "amenée"),
+    ("trouvee", "trouvée"),
+    ("transferee", "transférée"),
+    ("dechirera", "déchirera"),
+    ("ferme", "fermé"),
+    ("recule", "reculé"),
+    ("dependait", "dépendait"),
+    ("regardent", "regardent"),
+    ("evidement", "évidemment"),
+    ("celibataire", "célibataire"),
+    ("celebre", "célèbre"),
+    ("frappe", "frappé"),
+    ("frappais", "frappais"),
+    ("etait", "était"),
+    ("etais", "étais"),
+    ("etaient", "étaient"),
+)
+
+
+def _match_case(template: str, replacement: str) -> str:
+    """Cast `replacement` into the case pattern of `template`.
+
+    "Etre" → "Être" (capitalize), "ETRE" → "ÊTRE" (upper),
+    "etre" → "être" (lower). Mixed-case templates fall back to lower.
+    """
+    if template.isupper():
+        return replacement.upper()
+    if template[:1].isupper() and template[1:].islower():
+        return replacement[:1].upper() + replacement[1:]
+    return replacement.lower()
+
+
+_FR_ACCENT_PATTERN = re.compile(
+    r"\b(?P<word>" + "|".join(re.escape(p) for p, _ in _FR_ACCENT_REPAIRS) + r")\b",
+    flags=re.IGNORECASE,
+)
+_FR_ACCENT_TABLE: dict[str, str] = {k: v for k, v in _FR_ACCENT_REPAIRS}
+
+
+def _repair_french_accents(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        word = match.group("word")
+        target = _FR_ACCENT_TABLE[word.lower()]
+        return _match_case(word, target)
+
+    return _FR_ACCENT_PATTERN.sub(replace, text)
+
 
 class NormalizedEvent(BaseModel):
     event_id: int
@@ -61,23 +145,29 @@ class NormalizeResult(BaseModel):
 
 
 def normalize_text(text: str) -> str:
-    """Apply NFKC + invisible-char strip + whitespace normalization."""
+    """Apply NFKC + invisible-char strip + whitespace + accent normalization."""
     text = unicodedata.normalize("NFKC", text)
     for c in _INVISIBLE_CHARS:
         text = text.replace(c, "")
     text = _HSPACE_RUN.sub(" ", text)
     text = _NEWLINE_WITH_SPACES.sub("\n", text)
+    text = _repair_french_accents(text)
     return text.strip()
 
 
 def is_noise(text: str) -> bool:
     """Return True if `text` is OCR noise that should be pruned.
 
-    Criterion: shorter than 2 characters, or zero alphabetic characters.
+    Criterion: shorter than 2 characters, or fewer than 2 alphabetic
+    characters. The 2-alpha floor drops single-letter signs ("1-E", "A.",
+    "B!") that fansubs typically render with custom positioning and
+    rotation our OCR cannot match — leaving the ref event unmatched is
+    preferable to scoring 0.0 on styling/position.
     """
     if len(text) < 2:
         return True
-    if not any(c.isalpha() for c in text):
+    alpha_count = sum(1 for c in text if c.isalpha())
+    if alpha_count < 2:
         return True
     return False
 

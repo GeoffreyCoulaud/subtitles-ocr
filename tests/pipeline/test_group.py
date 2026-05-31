@@ -404,7 +404,7 @@ def test_group_config_exposes_max_gap_frames_default() -> None:
     a re-run of Stage 7. Lives next to the other group thresholds.
     """
     cfg = GroupConfig()
-    assert cfg.max_gap_frames == 10
+    assert cfg.max_gap_frames == 15
 
 
 def test_group_stage_version_is_bumped_for_gap_tolerance() -> None:

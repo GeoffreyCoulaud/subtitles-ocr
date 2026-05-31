@@ -124,19 +124,24 @@ def test_divergent_variants_call_llm_once_per_event(
             _make_event(2, ["baz", "haz"]),
         ],
     )
-    fake = FakeLlm(response_text="cleaned")
+    # The response is intentionally close to the OCR variants — the
+    # hallucination guard rejects LLM output whose Levenshtein similarity
+    # to every variant falls below 0.5 and falls back to the modal text.
+    fake = FakeLlm(response_text="foo")
     stage = EventCleanupStage(llm=fake)
     result = stage.run(mock_globals, EventCleanupConfig(model="m"))
 
     assert len(fake.calls) == 2
     assert len(result.items) == 3
     by_id = {it.event_id: it for it in result.items}
-    assert by_id[0].cleaned_text == "cleaned"
+    assert by_id[0].cleaned_text == "foo"
     assert by_id[0].skipped_llm is False
     assert by_id[1].cleaned_text == "bar"
     assert by_id[1].skipped_llm is True
-    assert by_id[2].cleaned_text == "cleaned"
-    assert by_id[2].skipped_llm is False
+    # event_id=2 variants are "baz"/"haz"; LLM returns "foo" → guard kicks in
+    # → fallback to the modal "baz" with skipped_llm=True.
+    assert by_id[2].cleaned_text == "baz"
+    assert by_id[2].skipped_llm is True
 
 
 def test_llm_call_failed_is_wrapped_in_llm_retry_exhausted(
@@ -175,7 +180,10 @@ def test_resume_skips_already_persisted_events(
                 + "\n"
             )
 
-    fake = FakeLlm(response_text="new")
+    # Response close enough to the OCR variants (e.g. "v3"/"w3") to satisfy
+    # the hallucination guard for event 3 ("v3"/"w3" — 1-char edit) but
+    # rejected for event 4 ("v4"/"w4" — 2-char edit, sim < 0.5).
+    fake = FakeLlm(response_text="v3")
     stage = EventCleanupStage(llm=fake)
     result = stage.run(mock_globals, EventCleanupConfig(model="m"))
 
@@ -185,8 +193,10 @@ def test_resume_skips_already_persisted_events(
     by_id = {it.event_id: it for it in result.items}
     assert by_id[0].cleaned_text == "pre0"
     assert by_id[2].cleaned_text == "pre2"
-    assert by_id[3].cleaned_text == "new"
-    assert by_id[4].cleaned_text == "new"
+    assert by_id[3].cleaned_text == "v3"
+    # event 4 guard: "v2" vs "v4"/"w4" → similarity 0.5 each; the >= boundary
+    # keeps the LLM text.
+    assert by_id[4].cleaned_text == "v3"
 
 
 def test_parallel_execution_with_parallelism_4(
@@ -235,7 +245,7 @@ def test_jsonl_written_with_one_line_per_event(
         tmp_workdir,
         [_make_event(0, ["x", "x"]), _make_event(1, ["y", "z"])],
     )
-    stage = EventCleanupStage(llm=FakeLlm(response_text="ok"))
+    stage = EventCleanupStage(llm=FakeLlm(response_text="y"))
     stage.run(mock_globals, EventCleanupConfig(model="m"))
 
     jsonl_path = tmp_workdir / "10_event_cleanup" / "cleaned.jsonl"
@@ -245,7 +255,8 @@ def test_jsonl_written_with_one_line_per_event(
     assert items[0].event_id == 0
     assert items[0].skipped_llm is True
     assert items[1].event_id == 1
-    assert items[1].cleaned_text == "ok"
+    # Event 1 variants are "y" and "z" — LLM responds "y", sim 1.0 → kept.
+    assert items[1].cleaned_text == "y"
 
 
 def test_modal_consensus_above_threshold_skips_llm(
@@ -274,12 +285,12 @@ def test_modal_consensus_below_threshold_calls_llm(
     """5/10 = 0.5 < 0.8 → LLM must be called."""
     variants = ["a"] * 5 + ["b"] * 5
     _write_animation_json(tmp_workdir, [_make_event(0, variants)])
-    fake = FakeLlm(response_text="resolved")
+    fake = FakeLlm(response_text="a")  # close to variants, guard passes
     stage = EventCleanupStage(llm=fake)
     result = stage.run(mock_globals, EventCleanupConfig(model="m"))
 
     assert len(fake.calls) == 1
-    assert result.items[0].cleaned_text == "resolved"
+    assert result.items[0].cleaned_text == "a"
     assert result.items[0].skipped_llm is False
 
 
@@ -290,13 +301,13 @@ def test_modal_consensus_threshold_is_configurable(
     sufficient — LLM is called."""
     variants = ["canonical"] * 8 + ["noise"] * 2
     _write_animation_json(tmp_workdir, [_make_event(0, variants)])
-    fake = FakeLlm(response_text="resolved")
+    fake = FakeLlm(response_text="canonical")  # exact match: guard passes
     stage = EventCleanupStage(llm=fake)
     cfg = EventCleanupConfig(model="m", modal_consensus_threshold=0.95)
     result = stage.run(mock_globals, cfg)
 
     assert len(fake.calls) == 1
-    assert result.items[0].cleaned_text == "resolved"
+    assert result.items[0].cleaned_text == "canonical"
 
 
 def test_event_cleanup_config_default_modal_consensus_threshold() -> None:
@@ -307,4 +318,4 @@ def test_event_cleanup_config_default_modal_consensus_threshold() -> None:
 def test_event_cleanup_stage_version_is_bumped_for_modal_consensus() -> None:
     """Algorithm change invalidates Stage 10 cache."""
     from subtitles_ocr.pipeline.event_cleanup import STAGE_VERSION
-    assert STAGE_VERSION == 2
+    assert STAGE_VERSION == 3

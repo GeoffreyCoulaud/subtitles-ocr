@@ -32,7 +32,7 @@ class OllamaLlmClient:
         self,
         host: str = "http://localhost:11434",
         retry: RetryConfig = DEFAULT_LLM_RETRY,
-        request_timeout_seconds: float = 60.0,
+        request_timeout_seconds: float = 300.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.host = host

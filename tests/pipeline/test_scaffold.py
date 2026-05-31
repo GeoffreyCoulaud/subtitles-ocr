@@ -398,7 +398,7 @@ def test_color_stage_has_config_field() -> None:
 def test_event_cleanup_module_imports() -> None:
     from subtitles_ocr.pipeline import event_cleanup
 
-    assert event_cleanup.STAGE_VERSION == 2
+    assert event_cleanup.STAGE_VERSION == 3
 
 
 def test_cleaned_event_round_trip() -> None:
@@ -442,7 +442,7 @@ def test_event_cleanup_stage_exposes_config_field() -> None:
 def test_normalize_module_imports() -> None:
     from subtitles_ocr.pipeline import normalize
 
-    assert normalize.STAGE_VERSION == 1
+    assert normalize.STAGE_VERSION == 2
 
 
 def test_normalized_event_round_trip() -> None:
@@ -474,7 +474,7 @@ def test_normalize_stage_construction() -> None:
 def test_export_module_imports() -> None:
     from subtitles_ocr.pipeline import export
 
-    assert export.STAGE_VERSION == 1
+    assert export.STAGE_VERSION == 3
 
 
 # `test_export_stage_run_raises_not_implemented` removed: ExportStage is now
@@ -498,8 +498,8 @@ def test_pipeline_config_ocr_defaults() -> None:
 
 def test_pipeline_config_group_defaults() -> None:
     cfg = PipelineConfig()
-    assert cfg.group.text_levenshtein_max == 0.2
-    assert cfg.group.quad_iou_min == 0.5
+    assert cfg.group.text_levenshtein_max == 0.3
+    assert cfg.group.quad_iou_min == 0.2
 
 
 def test_pipeline_config_animation_defaults() -> None:
@@ -512,7 +512,7 @@ def test_pipeline_config_animation_defaults() -> None:
     assert cfg.animation.min_fade_duration_ms == 125
     assert cfg.animation.fade_duration_cap_ms == 1000
     assert cfg.animation.fade_score_fit_range == (0.05, 0.95)
-    assert cfg.animation.fade_fit_r2_threshold == 0.7
+    assert cfg.animation.fade_fit_r2_threshold == 0.3
 
 
 def test_pipeline_config_color_defaults() -> None:

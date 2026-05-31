@@ -301,8 +301,8 @@ def test_changing_cache_invalidating_group_field_reexecutes_group_chain(
         ),
         composed_frames=iter(_composed_frames_for(g)),
     )
-    # Cache-invalidating field of Group flipped from default 0.2 → 0.3
-    GroupStage().run(g, GroupConfig(text_levenshtein_max=0.3))
+    # Cache-invalidating field of Group flipped from default 0.3 → 0.4
+    GroupStage().run(g, GroupConfig(text_levenshtein_max=0.4))
     AnimationStage().run(g, AnimationConfig())
     ColorStage(frame_reader=runner.frame_reader).run(g, ColorConfig())
 

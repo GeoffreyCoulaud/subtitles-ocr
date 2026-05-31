@@ -228,7 +228,10 @@ def test_event_cleanup_partial_then_resume_skips_done_events(
                 + "\n"
             )
 
-    llm = FakeLlm(response_factory=lambda schema, prompt: CleanedEvent(text="new"))
+    # Response text is similar enough to each event's OCR variants (≥ 0.5
+    # Lev similarity to "t3-a"/"t3-b" / "t4-a"/"t4-b") to satisfy the
+    # hallucination guard so the LLM result is kept.
+    llm = FakeLlm(response_factory=lambda schema, prompt: CleanedEvent(text="t4-a"))
     EventCleanupStage(llm=llm).run(
         integration_globals,
         EventCleanupConfig(model="m"),
@@ -239,7 +242,7 @@ def test_event_cleanup_partial_then_resume_skips_done_events(
     persisted = list(JsonlWriter(jsonl, EventCleanupItem).iter_persisted())
     assert [p.event_id for p in persisted] == [0, 1, 2, 3, 4]
     assert persisted[0].cleaned_text == "pre0"
-    assert persisted[4].cleaned_text == "new"
+    assert persisted[4].cleaned_text == "t4-a"
 
 
 def test_event_cleanup_midfile_corruption_raises_cache_corruption_error(

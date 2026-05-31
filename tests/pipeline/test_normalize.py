@@ -148,7 +148,11 @@ def test_is_noise_two_letters() -> None:
 
 
 def test_is_noise_letter_plus_digit() -> None:
-    assert is_noise("a1") is False
+    # Single-letter "word" (e.g. "a1", "1-E") is treated as noise because
+    # fansubs render such labels with custom positioning/rotation our OCR
+    # cannot reproduce; the ≥ 2-alpha floor keeps them out of the export.
+    assert is_noise("a1") is True
+    assert is_noise("ab1") is False
 
 
 def test_is_noise_accented_letter_only() -> None:

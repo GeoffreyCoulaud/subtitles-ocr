@@ -32,18 +32,27 @@ def _default_paddle_factory(*, lang: str, device: str) -> object:
     # factory).
     from paddleocr import PaddleOCR  # type: ignore[import-not-found]
 
+    # paddleocr 3.x with PP-OCRv5 mobile models — significantly better
+    # recognition quality than v4 on small-resolution material while staying
+    # within an interactive CPU latency budget (the server-det variant is
+    # ~4× slower). MKL-DNN is disabled because the bundled paddlepaddle 3.x
+    # runtime has incomplete oneDNN PIR support and segfaults on some Conv
+    # kernels otherwise.
     return PaddleOCR(
         lang=lang,
-        device=device,
+        ocr_version="PP-OCRv5",
+        text_detection_model_name="PP-OCRv5_mobile_det",
+        text_recognition_model_name="latin_PP-OCRv5_mobile_rec",
         use_doc_orientation_classify=False,
         use_doc_unwarping=False,
         use_textline_orientation=True,
+        enable_mkldnn=False,
     )
 
 
 def _normalize_device(requested: str) -> str:
-    # PaddleOCR's `device=` accepts "cpu", "gpu", "gpu:0", "npu", etc. We map
-    # the project's CLI vocabulary ("cuda", "rocm", "cpu", "auto") onto that.
+    # paddleocr 3.x PaddleOCR accepts "cpu", "gpu", "gpu:0", etc. via the
+    # `device` arg; we map the project's CLI vocabulary onto that.
     if requested in ("cuda", "rocm"):
         return "gpu"
     return requested
@@ -112,14 +121,38 @@ class PaddleOcrEngine:
     def detect(self, image: np.ndarray) -> list["OcrDetection"]:
         from subtitles_ocr.pipeline.ocr import OcrDetection
 
-        # paddleocr 2.10 exposes `.ocr(image, ...)` and returns
-        # `[[[bbox_poly, (text, score)], ...]]` (outer list = one entry per
-        # input image). cls=False skips text-orientation classification, which
-        # we don't need for subtitle frames.
-        results = self._engine.ocr(image, cls=False)  # type: ignore[attr-defined]
-        out: list[OcrDetection] = []
-        if not results:
+        # paddleocr 3.x exposes `.predict(image)` and returns one dict per
+        # image with `rec_texts`, `rec_scores`, and `rec_polys`. The legacy
+        # `.ocr(image, cls=False)` path is kept as a fallback when a test
+        # injects a 2.x-style engine via `_engine_factory`.
+        if hasattr(self._engine, "predict"):
+            results = self._engine.predict(image)  # type: ignore[attr-defined]
+            out: list[OcrDetection] = []
+            for entry in results:
+                texts = entry.get("rec_texts") or []
+                scores = entry.get("rec_scores") or []
+                polys = entry.get("rec_polys") or []
+                for text, score, poly in zip(texts, scores, polys, strict=False):
+                    pts = [
+                        (int(round(float(x))), int(round(float(y))))
+                        for x, y in poly
+                    ]
+                    if len(pts) != 4:
+                        continue
+                    out.append(
+                        OcrDetection(
+                            text=str(text),
+                            confidence=float(score),
+                            quad=pts,
+                        )
+                    )
             return out
+
+        # Legacy paddleocr 2.x path.
+        results = self._engine.ocr(image, cls=False)  # type: ignore[attr-defined]
+        out_legacy: list[OcrDetection] = []
+        if not results:
+            return out_legacy
         for image_result in results:
             if not image_result:
                 continue
@@ -134,5 +167,5 @@ class PaddleOcrEngine:
                 pts = [(int(round(float(x))), int(round(float(y)))) for x, y in poly]
                 if len(pts) != 4:
                     continue
-                out.append(OcrDetection(text=text, confidence=score, quad=pts))
-        return out
+                out_legacy.append(OcrDetection(text=text, confidence=score, quad=pts))
+        return out_legacy

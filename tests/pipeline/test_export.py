@@ -115,6 +115,43 @@ def _make_doc(*items: tuple[int, str]) -> NormalizeResult:
 # ---------------------------------------------------------------------------
 
 
+def test_export_drops_events_shorter_than_min_duration(
+    mock_globals: PipelineGlobals,
+) -> None:
+    # fps=24, so 1 frame ≈ 41.67 ms. With min_event_duration_ms=400 (default),
+    # any event spanning fewer than 10 frames must be dropped.
+    short = _make_event(0, _bottom_quad(), fansub_frame_start=0, fansub_frame_end=4)  # ~166 ms
+    keep = _make_event(1, _bottom_quad(), fansub_frame_start=10, fansub_frame_end=20)  # ~416 ms
+    anim = AnimationAnalysisResult(events=[short, keep], stats={})
+    colors = _make_colors(
+        (0, (255, 255, 255), (0, 0, 0), True),
+        (1, (255, 255, 255), (0, 0, 0), True),
+    )
+    doc = _make_doc((0, "noise"), (1, "real"))
+    _write_inputs(mock_globals.workdir, anim, colors, doc)
+
+    result = ExportStage().run(mock_globals, ExportConfig())
+
+    assert result.event_count == 1
+    subs = pysubs2.load(result.out_path_written)
+    assert len(subs) == 1
+    assert subs[0].text == "real"
+
+
+def test_export_min_duration_zero_disables_filter(
+    mock_globals: PipelineGlobals,
+) -> None:
+    short = _make_event(0, _bottom_quad(), fansub_frame_start=0, fansub_frame_end=2)  # ~83 ms
+    anim = AnimationAnalysisResult(events=[short], stats={})
+    colors = _make_colors((0, (255, 255, 255), (0, 0, 0), True))
+    doc = _make_doc((0, "short event"))
+    _write_inputs(mock_globals.workdir, anim, colors, doc)
+
+    result = ExportStage().run(mock_globals, ExportConfig(min_event_duration_ms=0))
+
+    assert result.event_count == 1
+
+
 def test_export_skips_event_when_text_missing(
     mock_globals: PipelineGlobals,
 ) -> None:
@@ -182,7 +219,8 @@ def test_export_sign_event_has_pos_and_frz_tags(
     line = subs[0]
     assert line.style.startswith("Sign-")
     assert "\\pos(" in line.text
-    assert "\\frz(" in line.text
+    # ASS spec for \frz uses no parens: `\frzNUMBER`.
+    assert "\\frz" in line.text and "\\frz(" not in line.text
 
 
 def test_export_sign_event_omits_frz_when_angle_below_threshold(
@@ -289,7 +327,11 @@ def test_export_fade_emits_fad_tag(mock_globals: PipelineGlobals) -> None:
     doc = _make_doc((0, "Faded"))
     _write_inputs(mock_globals.workdir, anim, colors, doc)
 
-    result = ExportStage().run(mock_globals, ExportConfig())
+    # `emit_animation_fades=True` opts back into the animation-driven \fad tag
+    # (off by default to suppress noisy false positives).
+    result = ExportStage().run(
+        mock_globals, ExportConfig(emit_animation_fades=True)
+    )
     line = pysubs2.load(str(result.out_path_written))[0]
     assert "\\fad(200,300)" in line.text
 

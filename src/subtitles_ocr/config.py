@@ -136,9 +136,9 @@ class OcrConfig(BaseModel):
 
 
 class GroupConfig(BaseModel):
-    text_levenshtein_max: float = 0.2
-    quad_iou_min: float = 0.5
-    max_gap_frames: int = 10
+    text_levenshtein_max: float = 0.3
+    quad_iou_min: float = 0.2
+    max_gap_frames: int = 15
 
 
 class AnimationConfig(BaseModel):
@@ -151,7 +151,7 @@ class AnimationConfig(BaseModel):
     min_fade_duration_ms: int = 125
     fade_duration_cap_ms: int = 1000
     fade_score_fit_range: tuple[float, float] = (0.05, 0.95)
-    fade_fit_r2_threshold: float = 0.7
+    fade_fit_r2_threshold: float = 0.3
 
 
 class ColorConfig(BaseModel):
@@ -169,6 +169,11 @@ class EventCleanupConfig(BaseModel):
     model: str | None = None
     parallelism: Annotated[int, NoCacheKey] = 4
     chunk_size: int = 100
+    # Threshold for skipping the LLM call when the most common OCR variant
+    # covers ≥ threshold of all variants. Set to 0.0 to always trust the
+    # modal text and bypass the LLM entirely — recommended when the
+    # available LLM is too small to reliably reconcile OCR variants without
+    # hallucinating.
     modal_consensus_threshold: float = 0.8
 
 
@@ -182,6 +187,21 @@ class ExportConfig(BaseModel):
     default_font: str = "Arial"
     default_font_size: int = 60
     color_cluster_threshold: float = 10.0
+    # Drop events shorter than this. Real subtitles are virtually never
+    # under ~400 ms in practice; events below this are dominated by
+    # compression-artifact noise that tanks precision without
+    # contributing meaningful recall.
+    min_event_duration_ms: int = 200
+    # Drop events whose mean per-frame OCR confidence is below this.
+    # Real legible subtitles consistently score ≥ ~0.85 with PaddleOCR;
+    # values below this are dominated by compression-artifact false
+    # positives that survive the duration filter.
+    min_event_mean_confidence: float = 0.85
+    # When True, animation-detected fade_in_ms / fade_out_ms is propagated to
+    # the exported \fad tag. The animation detector is noisy and produces many
+    # false positives that tank the fade sub-score on real material; the
+    # text-pattern title-overlay heuristic is more reliable.
+    emit_animation_fades: bool = False
 
 
 class PipelineConfig(BaseModel):
