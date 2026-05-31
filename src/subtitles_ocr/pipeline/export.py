@@ -147,6 +147,7 @@ def _centroid(quad: list[tuple[int, int]]) -> tuple[float, float]:
 
 
 _POSITION_HCENTER_TOLERANCE_FRAC: float = 0.20  # ±20 % of width center
+_POSITION_ROTATION_TOLERANCE_DEG: float = 2.0  # above this, classify as Sign
 
 
 def _merge_wrapped_lines(
@@ -247,6 +248,12 @@ def _classify_position(
     in_top_third = cy < height / 3
     in_bottom_third = cy > 2 * height / 3
     horizontally_centered = abs(cx - width / 2) <= _POSITION_HCENTER_TOLERANCE_FRAC * width
+    # Dialogue OCR quads are essentially axis-aligned (sub-degree noise).
+    # A clearly rotated quad signals a sign / overlay regardless of where the
+    # centroid happens to fall.
+    rotated = abs(_rotation_angle_deg(quad)) > _POSITION_ROTATION_TOLERANCE_DEG
+    if rotated:
+        return "Sign"
     if in_bottom_third and horizontally_centered:
         return "Bottom"
     if in_top_third and horizontally_centered:

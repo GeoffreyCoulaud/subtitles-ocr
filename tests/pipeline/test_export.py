@@ -12,7 +12,42 @@ from subtitles_ocr.config import ExportConfig, PipelineGlobals
 from subtitles_ocr.pipeline.animation import AnimatedEvent, AnimationAnalysisResult
 from subtitles_ocr.pipeline.color import ColorExtractionResult, EventColors
 from subtitles_ocr.pipeline.normalize import NormalizedEvent, NormalizeResult
-from subtitles_ocr.pipeline.export import ExportStage
+from subtitles_ocr.pipeline.export import ExportStage, _classify_position
+
+
+# ---------------------------------------------------------------------------
+# _classify_position
+# ---------------------------------------------------------------------------
+
+
+def test_classify_position_bottom_centred() -> None:
+    quad = [(860, 960), (1060, 960), (1060, 1020), (860, 1020)]
+    assert _classify_position(quad, 1920, 1080) == "Bottom"
+
+
+def test_classify_position_top_centred() -> None:
+    quad = [(860, 60), (1060, 60), (1060, 120), (860, 120)]
+    assert _classify_position(quad, 1920, 1080) == "Top"
+
+
+def test_classify_position_off_centre_is_sign() -> None:
+    quad = [(200, 950), (400, 950), (400, 1020), (200, 1020)]
+    assert _classify_position(quad, 1920, 1080) == "Sign"
+
+
+def test_classify_position_rotated_bottom_centred_is_sign() -> None:
+    # Even with a centroid in the bottom third and horizontally centred, a
+    # rotated quad is treated as Sign — regular dialogue has axis-aligned
+    # quads, rotated text is a sign / overlay convention.
+    quad = [(860, 960), (1060, 980), (1060, 1040), (860, 1020)]
+    assert _classify_position(quad, 1920, 1080) == "Sign"
+
+
+def test_classify_position_subdegree_noise_stays_bottom() -> None:
+    # OCR quads have sub-degree noise on dialogue lines; the rotation
+    # threshold for Sign classification must be above that.
+    quad = [(860, 960), (1060, 961), (1060, 1021), (860, 1020)]
+    assert _classify_position(quad, 1920, 1080) == "Bottom"
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +74,14 @@ def _rotated_sign_quad() -> list[tuple[int, int]]:
     # TL→TR has clear non-zero angle (30 deg downward to the right)
     # angle from (0,0) to (100, 58) ≈ 30°
     return [(200, 500), (300, 558), (270, 608), (170, 550)]
+
+
+def _rotated_bottom_quad() -> list[tuple[int, int]]:
+    # Centroid lands in bottom-third and horizontally centered, but the top
+    # edge slopes ~6° — the geometric tell-tale of a rotated overlay, not
+    # plain dialogue text. Classifier should call this a Sign despite the
+    # bottom-centre position.
+    return [(860, 960), (1060, 970), (1060, 1030), (860, 1020)]
 
 
 def _write_inputs(
