@@ -510,16 +510,20 @@ def _build_ssa_file(
 
         # Inline tag order: position + rotation + animation + (colors NEVER inline)
         tag_parts: list[str] = []
-        if position_class == "Sign":
-            # Style alignment is 2 (bottom-centre); the \pos coordinate marks
-            # the bottom-centre of the rendered text. Emit it at the bottom-
-            # centre of the OCR quad so the rendered text lands where it was
-            # detected.
+        if position_class in ("Sign", "Top"):
+            # Both Sign and Top render off the default-dialogue baseline:
+            # Sign at arbitrary screen positions, Top near the top edge for
+            # forced translations / episode titles. Fansub convention emits
+            # \pos on these and lets style alignment place the text.
+            #   - Sign: style alignment 2 (bottom-centre) → \pos is the
+            #     bottom-centre of the quad.
+            #   - Top:  style alignment 8 (top-centre)    → \pos is the
+            #     top-centre of the quad.
             xs = [p[0] for p in ev.quad_median]
             ys = [p[1] for p in ev.quad_median]
             cx = (min(xs) + max(xs)) / 2.0
-            by = float(max(ys))
-            tag_parts.append(f"\\pos({int(round(cx))},{int(round(by))})")
+            anchor_y = float(min(ys)) if position_class == "Top" else float(max(ys))
+            tag_parts.append(f"\\pos({int(round(cx))},{int(round(anchor_y))})")
             # Rotation: only emitted on Sign-class events (mid-screen overlays
             # like in-frame signs and rotated annotations). Regular dialogue
             # OCR quads have sub-degree rotation noise that would create

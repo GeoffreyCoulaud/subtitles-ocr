@@ -286,6 +286,26 @@ def test_export_sign_style_uses_bottom_center_alignment(
         assert int(subs.styles[name].alignment) == 2
 
 
+def test_export_top_class_emits_pos_at_quad_top_centre(
+    mock_globals: PipelineGlobals,
+) -> None:
+    # Top-of-screen overlays (forced translations, episode titles) render
+    # off the default-dialogue baseline. Emit \pos at the top-centre of the
+    # quad so the rendered text lands where it was detected; lifts intent
+    # and position against ref overlays that consistently use inline \pos.
+    quad = [(860, 60), (1060, 60), (1060, 120), (860, 120)]
+    ev = _make_event(0, quad)
+    anim = AnimationAnalysisResult(events=[ev], stats={})
+    colors = _make_colors((0, (255, 255, 255), (0, 0, 0), True))
+    doc = _make_doc((0, "Title"))
+    _write_inputs(mock_globals.workdir, anim, colors, doc)
+
+    result = ExportStage().run(mock_globals, ExportConfig())
+    line = pysubs2.load(str(result.out_path_written))[0]
+    assert line.style.startswith("Top-")
+    assert "\\pos(960,60)" in line.text
+
+
 def test_export_sign_pos_at_bottom_center_of_quad(
     mock_globals: PipelineGlobals,
 ) -> None:
