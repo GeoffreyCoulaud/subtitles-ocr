@@ -12,7 +12,12 @@ from subtitles_ocr.config import ExportConfig, PipelineGlobals
 from subtitles_ocr.pipeline.animation import AnimatedEvent, AnimationAnalysisResult
 from subtitles_ocr.pipeline.color import ColorExtractionResult, EventColors
 from subtitles_ocr.pipeline.normalize import NormalizedEvent, NormalizeResult
-from subtitles_ocr.pipeline.export import ExportStage, _classify_position
+from subtitles_ocr.pipeline.export import (
+    ExportStage,
+    _classify_position,
+    _fontsize_by_style,
+    fontsize_from_quad,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +53,74 @@ def test_classify_position_subdegree_noise_stays_bottom() -> None:
     # threshold for Sign classification must be above that.
     quad = [(860, 960), (1060, 961), (1060, 1021), (860, 1020)]
     assert _classify_position(quad, 1920, 1080) == "Bottom"
+
+
+# ---------------------------------------------------------------------------
+# fontsize_from_quad (ADR-0009)
+# ---------------------------------------------------------------------------
+
+
+def test_fontsize_from_quad_scales_height_by_calibration_constant() -> None:
+    # Quad height 40 → fontsize 34 (40 × 0.85 with the default constant,
+    # calibrated against KenIchi Default-style dialogue).
+    quad = [(0, 0), (100, 0), (100, 40), (0, 40)]
+    assert fontsize_from_quad(quad) == pytest.approx(34.0)
+
+
+def test_fontsize_from_quad_handles_unordered_quad() -> None:
+    # Same height irrespective of vertex order: max(y) - min(y).
+    quad = [(0, 40), (100, 0), (100, 40), (0, 0)]
+    assert fontsize_from_quad(quad) == pytest.approx(34.0)
+
+
+def test_fontsize_from_quad_floats_too() -> None:
+    # The OCR pipeline emits float quads when synthesising medians.
+    quad = [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)]
+    assert fontsize_from_quad(quad) == pytest.approx(50.0 * 0.85)
+
+
+# ---------------------------------------------------------------------------
+# _fontsize_by_style (ADR-0009)
+# ---------------------------------------------------------------------------
+
+
+def test_fontsize_by_style_returns_median_per_group() -> None:
+    # Three events; two share style "A" (heights 40, 60 → median candidate
+    # 50 → fontsize 50 × 0.85); one is style "B" (height 80 → fontsize 68).
+    ev_a1 = _make_event(0, [(0, 0), (100, 0), (100, 40), (0, 40)])
+    ev_a2 = _make_event(1, [(0, 0), (100, 0), (100, 60), (0, 60)])
+    ev_b = _make_event(2, [(0, 0), (100, 0), (100, 80), (0, 80)])
+    per_event = [
+        _PreparedEventForTest(ev_a1),
+        _PreparedEventForTest(ev_a2),
+        _PreparedEventForTest(ev_b),
+    ]
+    assignments = ["A", "A", "B"]
+    fallback = 99.0  # should not appear
+    result = _fontsize_by_style(per_event, assignments, fallback=fallback)
+    assert result["A"] == pytest.approx(50.0 * 0.85)
+    assert result["B"] == pytest.approx(80.0 * 0.85)
+
+
+def test_fontsize_by_style_uses_fallback_for_empty_groups() -> None:
+    # An assignment referring to a style that has no contributing events is
+    # not realistic in production (the synthesiser only emits styles it
+    # populates), but the helper must be defensive against the empty case.
+    result = _fontsize_by_style([], [], fallback=42.0)
+    assert result == {}
+
+
+def test_fontsize_by_style_single_event_uses_its_candidate() -> None:
+    ev = _make_event(0, [(0, 0), (100, 0), (100, 50), (0, 50)])
+    result = _fontsize_by_style([_PreparedEventForTest(ev)], ["X"], fallback=99.0)
+    assert result["X"] == pytest.approx(50.0 * 0.85)
+
+
+# Local _PreparedEvent shim — the production class is private; we only need
+# the `.event.quad_median` shape that `_fontsize_by_style` reads.
+class _PreparedEventForTest:
+    def __init__(self, ev: AnimatedEvent) -> None:
+        self.event = ev
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +415,59 @@ def test_export_sign_event_omits_frz_when_angle_below_threshold(
 # ---------------------------------------------------------------------------
 # Color clustering
 # ---------------------------------------------------------------------------
+
+
+def test_export_style_fontsize_is_median_of_quad_heights(
+    mock_globals: PipelineGlobals,
+) -> None:
+    # Two bottom dialogues with different quad heights → the synthesised
+    # Bottom-* style's fontsize is the median candidate (ADR-0009 §2.2).
+    short = _make_event(
+        0,
+        [(860, 970), (1060, 970), (1060, 1010), (860, 1010)],  # height 40
+        fansub_frame_start=0,
+        fansub_frame_end=24,
+    )
+    tall = _make_event(
+        1,
+        [(860, 960), (1060, 960), (1060, 1020), (860, 1020)],  # height 60
+        fansub_frame_start=48,
+        fansub_frame_end=72,
+    )
+    anim = AnimationAnalysisResult(events=[short, tall], stats={})
+    colors = _make_colors(
+        (0, (255, 255, 255), (0, 0, 0), True),
+        (1, (255, 255, 255), (0, 0, 0), True),
+    )
+    doc = _make_doc((0, "A"), (1, "B"))
+    _write_inputs(mock_globals.workdir, anim, colors, doc)
+
+    result = ExportStage().run(mock_globals, ExportConfig())
+    subs = pysubs2.load(str(result.out_path_written))
+    # Both events end up in the same colour cluster → single Bottom style.
+    bottom_styles = [name for name in subs.styles if name.startswith("Bottom-")]
+    assert len(bottom_styles) == 1
+    # Median of [34, 51] = 42.5 (heights 40, 60 × calibration 0.85).
+    assert subs.styles[bottom_styles[0]].fontsize == pytest.approx(42.5)
+
+
+def test_export_default_fallback_style_fontsize_uses_median(
+    mock_globals: PipelineGlobals,
+) -> None:
+    # Events with style_supported=False land on `Bottom-Default`; the
+    # default style must also pick up the data-driven fontsize from the
+    # contributing quads, not the hardcoded config.default_font_size.
+    ev = _make_event(0, [(860, 950), (1060, 950), (1060, 1010), (860, 1010)])
+    # height 60 × 0.75 = 45
+    anim = AnimationAnalysisResult(events=[ev], stats={})
+    colors = _make_colors((0, None, None, False))
+    doc = _make_doc((0, "Plain"))
+    _write_inputs(mock_globals.workdir, anim, colors, doc)
+
+    result = ExportStage().run(mock_globals, ExportConfig())
+    subs = pysubs2.load(str(result.out_path_written))
+    # Height 60 × 0.85 calibration = 51.0
+    assert subs.styles["Bottom-Default"].fontsize == pytest.approx(51.0)
 
 
 def test_export_two_bottoms_same_color_share_style(

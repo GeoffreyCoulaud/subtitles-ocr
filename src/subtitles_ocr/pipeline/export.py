@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import statistics
 from collections import Counter
 from fractions import Fraction
 from pathlib import Path
@@ -148,6 +149,35 @@ def _centroid(quad: list[tuple[int, int]]) -> tuple[float, float]:
 
 _POSITION_HCENTER_TOLERANCE_FRAC: float = 0.20  # ±20 % of width center
 _POSITION_ROTATION_TOLERANCE_DEG: float = 2.0  # above this, classify as Sign
+
+# ADR-0009: empirical mapping between an OCR quad's height (in fansub pixels)
+# and the ASS fontsize that renders glyphs of that height. The quad bounds the
+# detected glyphs *plus* anti-aliasing halo and outline padding, so the
+# fontsize is a fraction of the quad height. Calibrated against KenIchi's
+# Default-style dialogue (ref fs=34, OCR median quad height ≈ 40 → 0.85).
+_OCR_QUAD_TO_FONTSIZE: float = 0.85
+
+
+def fontsize_from_quad(quad: list[tuple[int, int]] | list[tuple[float, float]]) -> float:
+    ys = [p[1] for p in quad]
+    height = max(ys) - min(ys)
+    return float(height) * _OCR_QUAD_TO_FONTSIZE
+
+
+def _fontsize_by_style(
+    per_event: list["_PreparedEvent"],
+    style_assignments: list[str],
+    *,
+    fallback: float,
+) -> dict[str, float]:
+    """Compute median per-style fontsize from candidate quads (ADR-0009 §2.2)."""
+    candidates: dict[str, list[float]] = {}
+    for pe, name in zip(per_event, style_assignments, strict=True):
+        candidates.setdefault(name, []).append(fontsize_from_quad(pe.event.quad_median))
+    return {
+        name: statistics.median(vals) if vals else fallback
+        for name, vals in candidates.items()
+    }
 
 
 def _merge_wrapped_lines(
@@ -486,10 +516,16 @@ def _build_ssa_file(
     subs.styles = {}
     # Track which (position, color-cluster idx) -> canonical (fill, outline) RGB
     canonical_colors = _canonical_colors_by_style(per_event, style_assignments)
+    # ADR-0009: derive per-style fontsize from OCR quad heights so each Style
+    # holds the size implied by its contributing events.
+    fontsize_by_style = _fontsize_by_style(
+        per_event, style_assignments, fallback=float(config.default_font_size)
+    )
     used_styles = list(dict.fromkeys(style_assignments))  # stable, dedup
     for style_name in used_styles:
+        fontsize = fontsize_by_style.get(style_name, float(config.default_font_size))
         if style_name.endswith("-Default"):
-            subs.styles[style_name] = _make_default_style(config)
+            subs.styles[style_name] = _make_default_style(config, fontsize=fontsize)
         else:
             fill_rgb, outline_rgb = canonical_colors[style_name]
             subs.styles[style_name] = _make_style(
@@ -497,6 +533,7 @@ def _build_ssa_file(
                 outline_rgb=outline_rgb,
                 position=style_name.split("-", 1)[0],
                 config=config,
+                fontsize=fontsize,
             )
 
     for i, pe in enumerate(per_event):
@@ -597,10 +634,11 @@ def _make_style(
     outline_rgb: tuple[int, int, int],
     position: str,
     config: ExportConfig,
+    fontsize: float,
 ) -> SSAStyle:
     return SSAStyle(
         fontname=config.default_font,
-        fontsize=float(config.default_font_size),
+        fontsize=float(fontsize),
         primarycolor=Color(fill_rgb[0], fill_rgb[1], fill_rgb[2], 0),
         outlinecolor=Color(outline_rgb[0], outline_rgb[1], outline_rgb[2], 0),
         outline=2.0,
@@ -608,10 +646,10 @@ def _make_style(
     )
 
 
-def _make_default_style(config: ExportConfig) -> SSAStyle:
+def _make_default_style(config: ExportConfig, *, fontsize: float) -> SSAStyle:
     return SSAStyle(
         fontname=config.default_font,
-        fontsize=float(config.default_font_size),
+        fontsize=float(fontsize),
         primarycolor=Color(255, 255, 255, 0),
         outlinecolor=Color(0, 0, 0, 0),
         outline=2.0,

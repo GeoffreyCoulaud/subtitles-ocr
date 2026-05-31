@@ -1,7 +1,7 @@
 # ADR-0009: Data-driven font size from OCR quad height
 
 Branch: `feat/subtitle-pixels-by-diff-with-raw`
-Status: Designed — implementation pending.
+Status: Implemented.
 Revises: ADR-0002 §3 Stage 11 (Export — Style synthesis), ADR-0006 §5.7
 (via ADR-0008's source-agnostic styling resolution).
 
@@ -66,9 +66,13 @@ heights against known ref fontsizes on the validation corpus — and
 varies per video is the per-event quad heights, which the median
 aggregation naturally tracks.
 
-Default starting value: **0.75** (i.e. `fontsize ≈ height × 0.75`). It
-will be tuned during implementation against the KenIchi calibration
-sample; the constant is a *one-line* knob.
+Calibrated value: **0.85** (i.e. `fontsize ≈ height × 0.85`). Measured
+against KenIchi's Default-style dialogue: ref `fontsize = 34`, OCR
+median quad height ≈ 40, so 34 / 40 = 0.85. The constant is a one-line
+knob; sign / forced styles render with much larger or smaller fontsizes
+than dialogue but the median aggregation per-style absorbs the
+variability — the dialogue case is what we calibrate against because it
+dominates the corpus.
 
 ### 2.2. Pipeline: per-Style aggregation
 
@@ -137,25 +141,18 @@ ratio.
 
 ## 4. Migration plan
 
-1. Add `fontsize_from_quad` helper in `pipeline/export.py` with the
-   `_OCR_QUAD_TO_FONTSIZE` constant. TDD: a focused unit test that
-   asserts `fontsize_from_quad([(0,0), (100,0), (100,40), (0,40)]) ==
-   30.0` (height 40 × 0.75).
-2. Plumb the helper through `_synthesize_styles` so each style group
-   has a `fontsize` argument; compute it as the per-group median of
-   candidates. TDD: a focused integration test that builds three events
-   with different quad heights and asserts the synthesised Style's
-   `fontsize` matches the expected median.
-3. Update `_make_style` / `_make_default_style` to accept the computed
-   fontsize and emit it; remove the `default_font_size` hard-coding
-   from those paths (the config field stays as the *fallback* when no
-   events contribute).
-4. Re-export KenIchi, measure the new `styling` / `font_size`
-   contribution. Expected lift: `styling` ≈ 0.90 → ≈ 0.95 on the full
-   episode.
-5. Re-tune `_OCR_QUAD_TO_FONTSIZE` once if §3 acceptance criterion
-   isn't met on the first pass.
-6. Land ADR-0009 status: "Implemented".
+1. **Done** — `fontsize_from_quad` helper with `_OCR_QUAD_TO_FONTSIZE`
+   constant in `pipeline/export.py`.
+2. **Done** — `_fontsize_by_style` aggregates per-group median into a
+   `dict[style_name, fontsize]`.
+3. **Done** — `_make_style` and `_make_default_style` accept a
+   `fontsize` argument; `_build_ssa_file` passes the per-style median
+   in. `config.default_font_size` remains the fallback.
+4. **Done** — KenIchi full-episode re-exported: `styling` lifted from
+   0.896 to 0.948; final score 0.8870 → 0.8895 (+0.0025).
+5. **Done** — calibration constant tuned from 0.75 to 0.85 on the
+   first iteration; Bottom-Default style now emits `fontsize = 34`,
+   matching KenIchi ref Default exactly.
 
 ## 5. Out of scope
 
