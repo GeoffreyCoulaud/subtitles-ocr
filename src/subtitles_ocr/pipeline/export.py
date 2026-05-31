@@ -538,15 +538,9 @@ def _build_ssa_file(
             x2, y2 = motion["end"]
             tag_parts.append(f"\\move({int(x1)},{int(y1)},{int(x2)},{int(y2)})")
 
-        # Animation-detected fades are emitted only on non-dialogue overlays
-        # (Sign / Top). The detector produces many false positives on
-        # regular Bottom dialogue where ref rarely has \fad; gating by class
-        # restricts emission to events where ref consistently uses \fad
-        # (episode titles, forced translations, character-intro overlays).
-        if (
-            config.emit_animation_fades
-            and position_class != "Bottom"
-            and (ev.fade_in_ms > 0 or ev.fade_out_ms > 0)
+        # Animation-detected fades are off by default — see ExportConfig.
+        if config.emit_animation_fades and (
+            ev.fade_in_ms > 0 or ev.fade_out_ms > 0
         ):
             tag_parts.append(f"\\fad({ev.fade_in_ms},{ev.fade_out_ms})")
 

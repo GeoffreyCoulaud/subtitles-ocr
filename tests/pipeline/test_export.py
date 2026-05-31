@@ -421,32 +421,21 @@ def test_export_nonlinear_flagged_motion_prepends_comment(
     assert "Wild move" in line.text
 
 
-def test_export_fade_emits_fad_tag_on_overlay(mock_globals: PipelineGlobals) -> None:
-    # Animation-detected fades are emitted on non-Bottom events (Sign / Top
-    # overlays) by default.
-    ev = _make_event(0, _sign_quad(), fade_in_ms=200, fade_out_ms=300)
+def test_export_fade_emits_fad_tag(mock_globals: PipelineGlobals) -> None:
+    ev = _make_event(0, _bottom_quad(), fade_in_ms=200, fade_out_ms=300)
     anim = AnimationAnalysisResult(events=[ev], stats={})
     colors = _make_colors((0, (255, 255, 255), (0, 0, 0), True))
     doc = _make_doc((0, "Faded"))
     _write_inputs(mock_globals.workdir, anim, colors, doc)
 
-    result = ExportStage().run(mock_globals, ExportConfig())
+    # emit_animation_fades=True opts into the animation-driven \fad tag
+    # (off by default; the current detector misses real overlays and only
+    # emits dialogue false positives, so it does not lift the score).
+    result = ExportStage().run(
+        mock_globals, ExportConfig(emit_animation_fades=True)
+    )
     line = pysubs2.load(str(result.out_path_written))[0]
     assert "\\fad(200,300)" in line.text
-
-
-def test_export_fade_suppressed_on_bottom_dialogue(mock_globals: PipelineGlobals) -> None:
-    # Bottom-class events suppress animation-detected fades; the detector
-    # produces mostly false positives on regular dialogue.
-    ev = _make_event(0, _bottom_quad(), fade_in_ms=200, fade_out_ms=300)
-    anim = AnimationAnalysisResult(events=[ev], stats={})
-    colors = _make_colors((0, (255, 255, 255), (0, 0, 0), True))
-    doc = _make_doc((0, "Plain dialogue"))
-    _write_inputs(mock_globals.workdir, anim, colors, doc)
-
-    result = ExportStage().run(mock_globals, ExportConfig())
-    line = pysubs2.load(str(result.out_path_written))[0]
-    assert "\\fad" not in line.text
 
 
 def test_export_no_fade_when_both_zero(mock_globals: PipelineGlobals) -> None:
