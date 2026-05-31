@@ -1,7 +1,7 @@
 # ADR-0008: Effective on-screen anchor scoring
 
-Branch: `feat/subtitle-pixels-by-diff-with-raw` (to fork)
-Status: Designed — implementation pending.
+Branch: `feat/subtitle-pixels-by-diff-with-raw`
+Status: Implemented.
 Revises: ADR-0006 §5.8 (Position sub-score).
 Motivated by: ADR-0007 §3.4 (synthetic `\pos\fad` heuristic), §7 (open issues).
 
@@ -211,20 +211,24 @@ document, and `\fad`/`\frz` interaction. Resolutions:
 1. Implement `effective_anchor`, `position_pair_score`,
    `anchor_pair_score`, `intent_pair_score` in
    `src/subtitles_ocr/evaluation/position.py` (TDD: failing tests
-   first, then production code).
+   first, then production code). **Done** — commit `dad0362`.
 2. Wire the three new sub-scores into `Weights`, `score.py`,
    `report.py` (replacing the single `position` weight 5 with the three
-   axes 6 / 3 / 1).
-3. Update existing position tests (`tests/evaluation/test_position.py`,
-   `test_score.py`, `test_report.py`) to assert the new shape.
-4. Regenerate KenIchi's scoring report. Expected: position pillar
-   improves materially through the style-derived anchor matching ref's
-   pure-style events, with no pipeline-side `\pos\fad` heuristics needed.
-5. Retire ADR-0007 §3.4 (synthetic `\pos\fad`) in a follow-up commit;
-   update ADR-0007 status to "partially superseded".
-6. Tune `Default` style `MarginV` (and any other style-margin defaults)
-   in a follow-up commit, validated against the new score.
-7. Land final ADR-0008 status: "Implemented".
+   axes 6 / 3 / 1). **Done** — commit `dad0362`.
+3. Update existing position tests. **Done** — commit `dad0362`.
+4. Retire ADR-0007 §3.4 (synthetic `\pos\fad`). **Done** — commit
+   `29added`. ADR-0007 status updated to "partially superseded".
+5. Regenerate KenIchi's scoring report. **Done** — full episode scores
+   `0.869` under the new scheme without any text-pattern heuristics
+   emitting inline tags. Position pillar lifted from `0.10` (legacy
+   inline-only) to `0.86`, anchor to `0.94`. Remaining headroom is on
+   `intent = 0.22` (overlay detection still rudimentary) and `fade =
+   0.00` (animation fade detector disabled by default after the
+   heuristic retirement); both are pipeline concerns, not scoring.
+
+Future pipeline tuning passes (geometric overlay detection,
+`MarginV` learning, animation-fade re-enabling) are out of scope for
+this ADR but unlocked by it.
 
 ## 5. Out of scope
 
