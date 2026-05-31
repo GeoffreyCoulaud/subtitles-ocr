@@ -22,7 +22,12 @@ from subtitles_ocr.evaluation.position import (
 )
 from subtitles_ocr.evaluation.recall_precision import precision, recall
 from subtitles_ocr.evaluation.report import MatchedPair, ScoreReport, Weights
-from subtitles_ocr.evaluation.styling import styling_pair_score, styling_score
+from subtitles_ocr.evaluation.styling import (
+    ResolvedStyling,
+    resolve_styling,
+    styling_pair_score,
+    styling_score,
+)
 from subtitles_ocr.evaluation.text import (
     text_exact_pair_score,
     text_exact_score,
@@ -71,13 +76,16 @@ def score(
 
     play_res = _play_res(ref_subs)
 
-    # Pre-resolve effective anchors once per event.
+    # Pre-resolve effective anchors and styling once per event (ADR-0008).
     ref_anchors: list[EffectiveAnchor] = [effective_anchor(e, ref_subs) for e in ref_events]
     out_anchors: list[EffectiveAnchor] = [effective_anchor(e, out_subs) for e in out_events]
+    ref_styling: list[ResolvedStyling] = [resolve_styling(e, ref_subs) for e in ref_events]
+    out_styling: list[ResolvedStyling] = [resolve_styling(e, out_subs) for e in out_events]
 
     text_pairs: list[tuple[str, str]] = []
     timing_pairs: list[tuple[Cue, Cue]] = []
     anchor_pairs: list[tuple[EffectiveAnchor, EffectiveAnchor]] = []
+    styling_pairs: list[tuple[ResolvedStyling, ResolvedStyling]] = []
     matched_pairs: list[MatchedPair] = []
     warnings: list[str] = []
 
@@ -86,9 +94,12 @@ def score(
         out_e = out_events[out_i]
         out_eff = out_anchors[out_i]
         ref_eff = ref_anchors[ref_i]
+        out_sty = out_styling[out_i]
+        ref_sty = ref_styling[ref_i]
         text_pairs.append((out_e.text, ref_e.text))
         timing_pairs.append((_cue_of(out_e), _cue_of(ref_e)))
         anchor_pairs.append((out_eff, ref_eff))
+        styling_pairs.append((out_sty, ref_sty))
         matched_pairs.append(
             MatchedPair(
                 ref_index=ref_i,
@@ -98,7 +109,7 @@ def score(
                 text_exact=text_exact_pair_score(out_e.text, ref_e.text),
                 timing=timing_pair_score(_cue_of(out_e), _cue_of(ref_e), fps=fps, K=K),
                 line_breaks=line_breaks_pair_score(out_e.text, ref_e.text),
-                styling=styling_pair_score(out_e.text, ref_e.text),
+                styling=styling_pair_score(out_sty, ref_sty),
                 position=position_pair_score(out_eff, ref_eff, play_res),
                 anchor=anchor_pair_score(out_eff, ref_eff),
                 intent=intent_pair_score(out_eff, ref_eff),
@@ -120,7 +131,7 @@ def score(
         "recall": recall(n_matched, n_ref),
         "precision": precision(n_matched, n_out),
         "line_breaks": line_breaks_score(text_pairs),
-        "styling": styling_score(text_pairs),
+        "styling": styling_score(styling_pairs),
         "position": position_score(anchor_pairs, play_res),
         "anchor": anchor_score(anchor_pairs),
         "intent": intent_score(anchor_pairs),
