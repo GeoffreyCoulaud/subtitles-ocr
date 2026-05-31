@@ -197,12 +197,13 @@ class ExportConfig(BaseModel):
     # values below this are dominated by compression-artifact false
     # positives that survive the duration filter.
     min_event_mean_confidence: float = 0.85
-    # When True, animation-detected fade_in_ms / fade_out_ms is propagated
-    # to the exported \fad tag. Off by default because the detector's R²
-    # gate, even at the loosest workable setting (0.30), still emits many
-    # false positives at locations where ref has no \fad — the resulting
-    # noise drowns the few true matches in the fade sub-score.
-    emit_animation_fades: bool = False
+    # When True (default), animation-detected fade_in_ms / fade_out_ms is
+    # propagated to the exported \fad tag for **non-Bottom events only**
+    # (Sign / Top overlays). Restricting to overlays gates out the bulk of
+    # the detector's dialogue false positives; what remains aligns with the
+    # fansub convention of \fad on episode titles, forced translations and
+    # character-intro overlays.
+    emit_animation_fades: bool = True
 
 
 class PipelineConfig(BaseModel):
