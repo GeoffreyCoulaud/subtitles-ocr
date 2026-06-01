@@ -171,3 +171,6 @@ Pass `--json` for a machine-readable `ScoreReport`. Pass `--weights weights.json
 - [ADR-0008 — effective on-screen anchor scoring (replaces ADR-0006 §5.8)](docs/ADR-0008-Effective-Anchor-Scoring.md)
 - [ADR-0009 — data-driven font size from OCR quad height](docs/ADR-0009-Data-Driven-Font-Size.md)
 - [ADR-0010 — mask-alpha-based fade detection (replaces ADR-0003 §4.2 sub-stage B)](docs/ADR-0010-Mask-Alpha-Fade-Detection.md)
+- [ADR-0011 — master-robust diff for the subtitle mask (Rejected — see §8)](docs/ADR-0011-Master-Robust-Diff.md)
+- [ADR-0012 — edge-diff with per-scene spatial alignment (Rejected — see §8)](docs/ADR-0012-Edge-Diff-Per-Scene-Alignment.md)
+- [ADR-0013 — text detector upstream, diff-as-validator downstream (Rejected — see §8)](docs/ADR-0013-Text-Detector-Plus-Validator.md)
